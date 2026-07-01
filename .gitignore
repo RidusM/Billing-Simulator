@@ -1,0 +1,10 @@
+*.log
+logs/
+
+configs/
+.env
+
+bin/
+
+coverage.txt
+coverage.html
