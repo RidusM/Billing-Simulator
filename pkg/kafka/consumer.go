@@ -1,9 +1,10 @@
 package kafka
 
 import (
-	"bill-stripe-sim/pkg/logger"
 	"context"
 	"fmt"
+
+	"bill-stripe-sim/pkg/logger"
 
 	"github.com/segmentio/kafka-go"
 )

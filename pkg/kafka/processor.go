@@ -1,13 +1,14 @@
 package kafka
 
 import (
-	"bill-stripe-sim/pkg/kafka/dlq"
-	"bill-stripe-sim/pkg/logger"
 	"context"
 	"fmt"
 	"math/rand/v2"
 	"sync"
 	"time"
+
+	"bill-stripe-sim/pkg/kafka/dlq"
+	"bill-stripe-sim/pkg/logger"
 
 	"github.com/segmentio/kafka-go"
 )

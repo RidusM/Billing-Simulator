@@ -1,12 +1,13 @@
 package dlq
 
 import (
-	"bill-stripe-sim/pkg/logger"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"bill-stripe-sim/pkg/logger"
 
 	"github.com/segmentio/kafka-go"
 )

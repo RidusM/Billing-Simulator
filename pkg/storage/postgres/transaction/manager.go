@@ -1,12 +1,13 @@
 package transaction
 
 import (
-	"bill-stripe-sim/pkg/storage/postgres"
 	"context"
 	"errors"
 	"fmt"
 	"math/rand/v2"
 	"time"
+
+	"bill-stripe-sim/pkg/storage/postgres"
 
 	"bill-stripe-sim/pkg/logger"
 

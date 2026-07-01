@@ -1,11 +1,12 @@
 package postgres
 
 import (
-	"bill-stripe-sim/pkg/logger"
 	"context"
 	"fmt"
 	"math/rand/v2"
 	"time"
+
+	"bill-stripe-sim/pkg/logger"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/exaring/otelpgx"
