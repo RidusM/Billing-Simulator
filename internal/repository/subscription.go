@@ -54,7 +54,18 @@ func (r *SubscriptionRepository) GetByID(ctx context.Context, id uuid.UUID) (*en
 	const op = "repository.subscription.GetByID"
 
 	sql, args, err := r.storage.
-		Select("id", "public_id", "customer_id", "status", "price_id", "current_period_start", "current_period_end", "next_billing_at", "canceled_at", "created_at").
+		Select(
+			"id",
+			"public_id",
+			"customer_id",
+			"status",
+			"price_id",
+			"current_period_start",
+			"current_period_end",
+			"next_billing_at",
+			"canceled_at",
+			"created_at",
+		).
 		From("subscriptions").
 		Where(squirrel.Eq{"id": id}).
 		ToSql()
@@ -81,7 +92,18 @@ func (r *SubscriptionRepository) GetByPublicID(ctx context.Context, publicID str
 	const op = "repository.subscription.GetByPublicID"
 
 	sql, args, err := r.storage.
-		Select("id", "public_id", "customer_id", "status", "price_id", "current_period_start", "current_period_end", "next_billing_at", "canceled_at", "created_at").
+		Select(
+			"id",
+			"public_id",
+			"customer_id",
+			"status",
+			"price_id",
+			"current_period_start",
+			"current_period_end",
+			"next_billing_at",
+			"canceled_at",
+			"created_at",
+		).
 		From("subscriptions").
 		Where(squirrel.Eq{"public_id": publicID}).
 		ToSql()
@@ -104,7 +126,11 @@ func (r *SubscriptionRepository) GetByPublicID(ctx context.Context, publicID str
 	return &s, nil
 }
 
-func (r *SubscriptionRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.SubscriptionStatus) error {
+func (r *SubscriptionRepository) UpdateStatus(
+	ctx context.Context,
+	id uuid.UUID,
+	status entity.SubscriptionStatus,
+) error {
 	const op = "repository.subscription.UpdateStatus"
 
 	sql, args, err := r.storage.
@@ -127,7 +153,13 @@ func (r *SubscriptionRepository) UpdateStatus(ctx context.Context, id uuid.UUID,
 	return nil
 }
 
-func (r *SubscriptionRepository) UpdateNextBilling(ctx context.Context, id uuid.UUID, nextBilling time.Time, periodStart time.Time, periodEnd time.Time) error {
+func (r *SubscriptionRepository) UpdateNextBilling(
+	ctx context.Context,
+	id uuid.UUID,
+	nextBilling time.Time,
+	periodStart time.Time,
+	periodEnd time.Time,
+) error {
 	const op = "repository.subscription.UpdateNextBilling"
 
 	sql, args, err := r.storage.
@@ -152,11 +184,25 @@ func (r *SubscriptionRepository) UpdateNextBilling(ctx context.Context, id uuid.
 	return nil
 }
 
-func (r *SubscriptionRepository) GetActiveForRenewal(ctx context.Context, currentTime time.Time) ([]*entity.Subscription, error) {
+func (r *SubscriptionRepository) GetActiveForRenewal(
+	ctx context.Context,
+	currentTime time.Time,
+) ([]*entity.Subscription, error) {
 	const op = "repository.subscription.GetActiveForRenewal"
 
 	sql, args, err := r.storage.
-		Select("id", "public_id", "customer_id", "status", "price_id", "current_period_start", "current_period_end", "next_billing_at", "canceled_at", "created_at").
+		Select(
+			"id",
+			"public_id",
+			"customer_id",
+			"status",
+			"price_id",
+			"current_period_start",
+			"current_period_end",
+			"next_billing_at",
+			"canceled_at",
+			"created_at",
+		).
 		From("subscriptions").
 		Where(squirrel.And{
 			squirrel.Eq{"status": entity.SubscriptionStatusActive},

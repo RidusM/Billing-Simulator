@@ -12,7 +12,12 @@ type QueryExecuter interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
-	CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error)
+	CopyFrom(
+		ctx context.Context,
+		tableName pgx.Identifier,
+		columnNames []string,
+		rowSrc pgx.CopyFromSource,
+	) (int64, error)
 }
 
 func (p *Postgres) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
@@ -53,6 +58,11 @@ func (t *TxQueryExecuter) SendBatch(ctx context.Context, b *pgx.Batch) pgx.Batch
 	return t.Tx.SendBatch(ctx, b)
 }
 
-func (t *TxQueryExecuter) CopyFrom(ctx context.Context, tName pgx.Identifier, c []string, r pgx.CopyFromSource) (int64, error) {
+func (t *TxQueryExecuter) CopyFrom(
+	ctx context.Context,
+	tName pgx.Identifier,
+	c []string,
+	r pgx.CopyFromSource,
+) (int64, error) {
 	return t.Tx.CopyFrom(ctx, tName, c, r)
 }

@@ -59,7 +59,10 @@ func formatValidationError(err error) error {
 	if validationErrs, ok := errors.AsType[validator.ValidationErrors](err); ok {
 		msgs := make([]string, 0, len(validationErrs))
 		for _, ve := range validationErrs {
-			msgs = append(msgs, fmt.Sprintf("field '%s' failed on tag '%s' (current value: %v)", ve.Field(), ve.Tag(), ve.Value()))
+			msgs = append(
+				msgs,
+				fmt.Sprintf("field '%s' failed on tag '%s' (current value: %v)", ve.Field(), ve.Tag(), ve.Value()),
+			)
 		}
 		return fmt.Errorf("%w: %s", ErrConfigValidation, strings.Join(msgs, "; "))
 	}

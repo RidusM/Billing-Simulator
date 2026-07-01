@@ -7,9 +7,8 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"bill-stripe-sim/pkg/storage/postgres"
-
 	"bill-stripe-sim/pkg/logger"
+	"bill-stripe-sim/pkg/storage/postgres"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"

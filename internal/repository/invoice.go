@@ -53,7 +53,17 @@ func (r *InvoiceRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.
 	const op = "repository.invoice.GetByID"
 
 	sql, args, err := r.storage.
-		Select("id", "public_id", "subscription_id", "customer_id", "amount", "currency", "status", "attempt_count", "created_at").
+		Select(
+			"id",
+			"public_id",
+			"subscription_id",
+			"customer_id",
+			"amount",
+			"currency",
+			"status",
+			"attempt_count",
+			"created_at",
+		).
 		From("invoices").
 		Where(squirrel.Eq{"id": id}).
 		ToSql()
@@ -79,7 +89,17 @@ func (r *InvoiceRepository) GetByPublicID(ctx context.Context, publicID string) 
 	const op = "repository.invoice.GetByPublicID"
 
 	sql, args, err := r.storage.
-		Select("id", "public_id", "subscription_id", "customer_id", "amount", "currency", "status", "attempt_count", "created_at").
+		Select(
+			"id",
+			"public_id",
+			"subscription_id",
+			"customer_id",
+			"amount",
+			"currency",
+			"status",
+			"attempt_count",
+			"created_at",
+		).
 		From("invoices").
 		Where(squirrel.Eq{"public_id": publicID}).
 		ToSql()
@@ -151,7 +171,17 @@ func (r *InvoiceRepository) GetByCustomerID(ctx context.Context, customerID uuid
 	const op = "repository.invoice.GetByCustomerID"
 
 	sql, args, err := r.storage.
-		Select("id", "public_id", "subscription_id", "customer_id", "amount", "currency", "status", "attempt_count", "created_at").
+		Select(
+			"id",
+			"public_id",
+			"subscription_id",
+			"customer_id",
+			"amount",
+			"currency",
+			"status",
+			"attempt_count",
+			"created_at",
+		).
 		From("invoices").
 		Where(squirrel.Eq{"customer_id": customerID}).
 		OrderBy("created_at DESC").
@@ -170,7 +200,15 @@ func (r *InvoiceRepository) GetByCustomerID(ctx context.Context, customerID uuid
 	for rows.Next() {
 		var i entity.Invoice
 		err = rows.Scan(
-			&i.ID, &i.PublicID, &i.SubscriptionID, &i.CustomerID, &i.Amount, &i.Currency, &i.Status, &i.AttemptCount, &i.CreatedAt,
+			&i.ID,
+			&i.PublicID,
+			&i.SubscriptionID,
+			&i.CustomerID,
+			&i.Amount,
+			&i.Currency,
+			&i.Status,
+			&i.AttemptCount,
+			&i.CreatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", op, err)
