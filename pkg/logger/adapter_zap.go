@@ -9,6 +9,8 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+const _argsPairs = 2
+
 type ZapAdapter struct {
 	logger *zap.Logger
 	sugar  *zap.SugaredLogger
@@ -152,7 +154,9 @@ func sanitizeArgs(args []any) []any {
 	if len(args)%2 != 0 {
 		newArgs := make([]any, len(args), len(args)+1)
 		copy(newArgs, args)
-		args = append(newArgs, "<missing_value>")
+
+		newArgs = append(newArgs, "<missing_value>")
+		args = newArgs
 	}
 
 	var copied bool
@@ -186,7 +190,7 @@ func toZapLevel(level Level) zapcore.Level {
 }
 
 func toZapFields(args []any) []zap.Field {
-	fields := make([]zap.Field, 0, len(args)/2)
+	fields := make([]zap.Field, 0, len(args)/_argsPairs)
 	for i := 0; i < len(args); i += 2 {
 		key, _ := args[i].(string)
 

@@ -72,6 +72,7 @@ func (tm *Manager) ExecuteInTransaction(
 			return HandleError(lastErr)
 		}
 
+		//nolint:gosec // weak random is completely fine for exponential backoff jitter
 		jitter := min(
 			time.Duration(rand.Int64N(int64(currentBackoff*_backoffMultiplier))),
 			tm.cfg.MaxRetryDelay,

@@ -12,3 +12,5 @@ CREATE TABLE subscriptions (
     canceled_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL
 );
+
+CREATE INDEX idx_subscriptions_next_billing ON subscriptions(next_billing_at) WHERE status IN ('active', 'past_due');

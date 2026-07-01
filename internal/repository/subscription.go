@@ -51,46 +51,14 @@ func (r *SubscriptionRepository) Create(ctx context.Context, s *entity.Subscript
 }
 
 func (r *SubscriptionRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Subscription, error) {
-	const op = "repository.subscription.GetByID"
-
-	sql, args, err := r.storage.
-		Select(
-			"id",
-			"public_id",
-			"customer_id",
-			"status",
-			"price_id",
-			"current_period_start",
-			"current_period_end",
-			"next_billing_at",
-			"canceled_at",
-			"created_at",
-		).
-		From("subscriptions").
-		Where(squirrel.Eq{"id": id}).
-		ToSql()
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	var s entity.Subscription
-	err = r.executor(ctx).QueryRow(ctx, sql, args...).Scan(
-		&s.ID, &s.PublicID, &s.CustomerID, &s.Status, &s.PriceID,
-		&s.CurrentPeriodStart, &s.CurrentPeriodEnd, &s.NextBillingAt, &s.CanceledAt, &s.CreatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%s: %w", op, entity.ErrSubscriptionNotFound)
-		}
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	return &s, nil
+	return r.findFirst(ctx, "repository.subscription.GetByID", squirrel.Eq{"id": id})
 }
 
 func (r *SubscriptionRepository) GetByPublicID(ctx context.Context, publicID string) (*entity.Subscription, error) {
-	const op = "repository.subscription.GetByPublicID"
+	return r.findFirst(ctx, "repository.subscription.GetByPublicID", squirrel.Eq{"public_id": publicID})
+}
 
+func (r *SubscriptionRepository) findFirst(ctx context.Context, op string, filter any) (*entity.Subscription, error) {
 	sql, args, err := r.storage.
 		Select(
 			"id",
@@ -105,7 +73,7 @@ func (r *SubscriptionRepository) GetByPublicID(ctx context.Context, publicID str
 			"created_at",
 		).
 		From("subscriptions").
-		Where(squirrel.Eq{"public_id": publicID}).
+		Where(filter).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
@@ -223,8 +191,16 @@ func (r *SubscriptionRepository) GetActiveForRenewal(
 	for rows.Next() {
 		var s entity.Subscription
 		err = rows.Scan(
-			&s.ID, &s.PublicID, &s.CustomerID, &s.Status, &s.PriceID,
-			&s.CurrentPeriodStart, &s.CurrentPeriodEnd, &s.NextBillingAt, &s.CanceledAt, &s.CreatedAt,
+			&s.ID,
+			&s.PublicID,
+			&s.CustomerID,
+			&s.Status,
+			&s.PriceID,
+			&s.CurrentPeriodStart,
+			&s.CurrentPeriodEnd,
+			&s.NextBillingAt,
+			&s.CanceledAt,
+			&s.CreatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", op, err)

@@ -50,44 +50,14 @@ func (r *InvoiceRepository) Create(ctx context.Context, i *entity.Invoice) error
 }
 
 func (r *InvoiceRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Invoice, error) {
-	const op = "repository.invoice.GetByID"
-
-	sql, args, err := r.storage.
-		Select(
-			"id",
-			"public_id",
-			"subscription_id",
-			"customer_id",
-			"amount",
-			"currency",
-			"status",
-			"attempt_count",
-			"created_at",
-		).
-		From("invoices").
-		Where(squirrel.Eq{"id": id}).
-		ToSql()
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	var i entity.Invoice
-	err = r.executor(ctx).QueryRow(ctx, sql, args...).Scan(
-		&i.ID, &i.PublicID, &i.SubscriptionID, &i.CustomerID, &i.Amount, &i.Currency, &i.Status, &i.AttemptCount, &i.CreatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%s: %w", op, entity.ErrInvoiceNotFound)
-		}
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	return &i, nil
+	return r.findFirst(ctx, "repository.invoice.GetByID", squirrel.Eq{"id": id})
 }
 
 func (r *InvoiceRepository) GetByPublicID(ctx context.Context, publicID string) (*entity.Invoice, error) {
-	const op = "repository.invoice.GetByPublicID"
+	return r.findFirst(ctx, "repository.invoice.GetByPublicID", squirrel.Eq{"public_id": publicID})
+}
 
+func (r *InvoiceRepository) findFirst(ctx context.Context, op string, filter any) (*entity.Invoice, error) {
 	sql, args, err := r.storage.
 		Select(
 			"id",
@@ -101,7 +71,7 @@ func (r *InvoiceRepository) GetByPublicID(ctx context.Context, publicID string) 
 			"created_at",
 		).
 		From("invoices").
-		Where(squirrel.Eq{"public_id": publicID}).
+		Where(filter).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
@@ -109,7 +79,15 @@ func (r *InvoiceRepository) GetByPublicID(ctx context.Context, publicID string) 
 
 	var i entity.Invoice
 	err = r.executor(ctx).QueryRow(ctx, sql, args...).Scan(
-		&i.ID, &i.PublicID, &i.SubscriptionID, &i.CustomerID, &i.Amount, &i.Currency, &i.Status, &i.AttemptCount, &i.CreatedAt,
+		&i.ID,
+		&i.PublicID,
+		&i.SubscriptionID,
+		&i.CustomerID,
+		&i.Amount,
+		&i.Currency,
+		&i.Status,
+		&i.AttemptCount,
+		&i.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -117,7 +95,6 @@ func (r *InvoiceRepository) GetByPublicID(ctx context.Context, publicID string) 
 		}
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
-
 	return &i, nil
 }
 

@@ -10,6 +10,11 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
+const (
+	_defaultBatchSize    = 100
+	_defaultBatchTimeout = 10 * time.Millisecond
+)
+
 type Producer struct {
 	writer *kafka.Writer
 	log    logger.Logger
@@ -22,9 +27,8 @@ func NewProducer(brokers []string, topic string, log logger.Logger) *Producer {
 			Addr:         kafka.TCP(brokers...),
 			Balancer:     &kafka.Murmur2Balancer{},
 			RequiredAcks: kafka.RequireAll,
-			// Настройки для Highload: батчинг сообщений
-			BatchSize:    100,
-			BatchTimeout: 10 * time.Millisecond,
+			BatchSize:    _defaultBatchSize,
+			BatchTimeout: _defaultBatchTimeout,
 			Logger: kafka.LoggerFunc(func(msg string, args ...any) {
 				log.LogAttrs(context.Background(), logger.Info, "producer info",
 					logger.String("message", fmt.Sprintf(msg, args...)),

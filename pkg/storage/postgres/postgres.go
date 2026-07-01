@@ -13,7 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const _backoffMultiplier = 2
+const (
+	_backoffMultiplier  = 2
+	_defaultPingTimeout = 5 * time.Second
+)
 
 type Postgres struct {
 	Builder squirrel.StatementBuilderType
@@ -51,7 +54,7 @@ func New(baseCfg Config, log logger.Logger, opts ...Option) (*Postgres, error) {
 	for attemptCount := 1; attemptCount <= cfg.ConnAttempts; attemptCount++ {
 		pg.Pool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
 		if err == nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), _defaultPingTimeout)
 			err = pg.Pool.Ping(ctx)
 			cancel()
 
@@ -63,6 +66,7 @@ func New(baseCfg Config, log logger.Logger, opts ...Option) (*Postgres, error) {
 			pg.Pool.Close()
 		}
 
+		//nolint:gosec // weak random is completely fine for exponential backoff jitter
 		jitter := min(time.Duration(rand.Int64N(int64(currentBackoff*_backoffMultiplier))), cfg.MaxRetryDelay)
 
 		pg.logger.Warn("postgresql connection attempt failed, retrying...",

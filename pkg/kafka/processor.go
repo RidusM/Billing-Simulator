@@ -51,7 +51,7 @@ func NewProcessor(
 }
 
 func (p *Processor) Start(ctx context.Context, handler Handler) {
-	for i := 0; i < p.cfg.WorkersCount; i++ {
+	for range p.cfg.WorkersCount {
 		p.wg.Add(1)
 		go p.worker(ctx, handler)
 	}
@@ -88,7 +88,6 @@ func (p *Processor) processWithRetry(ctx context.Context, msg kafka.Message, han
 	for attempt := 1; attempt <= p.cfg.MaxAttempts; attempt++ {
 		lastErr = handler(ctx, msg)
 		if lastErr == nil {
-
 			if err := p.consumer.Commit(ctx, msg); err != nil {
 				p.logger.LogAttrs(ctx, logger.Error, "failed to commit message offset",
 					logger.Int64("offset", msg.Offset),
@@ -117,6 +116,7 @@ func (p *Processor) processWithRetry(ctx context.Context, msg kafka.Message, han
 			break
 		}
 
+		//nolint:gosec // weak random is completely fine for exponential backoff jitter
 		jitter := min(time.Duration(
 			rand.Int64N(int64(currentBackoff*_backoffMultiplier)),
 		), p.cfg.MaxRetryDelay)

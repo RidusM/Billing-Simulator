@@ -50,41 +50,18 @@ func (r *CustomerRepository) Create(ctx context.Context, c *entity.Customer) err
 }
 
 func (r *CustomerRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Customer, error) {
-	const op = "repository.customer.GetByID"
-
-	sql, args, err := r.storage.
-		Select("id", "public_id", "email", "created_at").
-		From("customers").
-		Where(squirrel.Eq{"id": id}).
-		ToSql()
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	var c entity.Customer
-	err = r.executor(ctx).QueryRow(ctx, sql, args...).Scan(
-		&c.ID,
-		&c.PublicID,
-		&c.Email,
-		&c.CreatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%s: %w", op, entity.ErrCustomerNotFound)
-		}
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	return &c, nil
+	return r.findFirst(ctx, "repository.customer.GetByID", squirrel.Eq{"id": id})
 }
 
 func (r *CustomerRepository) GetByPublicID(ctx context.Context, publicID string) (*entity.Customer, error) {
-	const op = "repository.customer.GetByPublicID"
+	return r.findFirst(ctx, "repository.customer.GetByPublicID", squirrel.Eq{"public_id": publicID})
+}
 
+func (r *CustomerRepository) findFirst(ctx context.Context, op string, filter any) (*entity.Customer, error) {
 	sql, args, err := r.storage.
 		Select("id", "public_id", "email", "created_at").
 		From("customers").
-		Where(squirrel.Eq{"public_id": publicID}).
+		Where(filter).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)

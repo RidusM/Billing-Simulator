@@ -11,6 +11,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const _defaultPingTimeout = 5 * time.Second
+
 type Redis struct {
 	Client   *redis.Client
 	CacheTTL time.Duration
@@ -39,7 +41,7 @@ func New(baseCfg Config, opts ...Option) (*Redis, error) {
 	}
 	rdb.Client = redis.NewClient(clientOpts)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), _defaultPingTimeout)
 	defer cancel()
 
 	if err := rdb.Client.Ping(ctx).Err(); err != nil {

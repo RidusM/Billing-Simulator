@@ -18,7 +18,7 @@ func NewCacheRepository(storage *redis.Redis) *CacheRepository {
 	}
 }
 
-func (r *CacheRepository) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+func (r *CacheRepository) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	err := r.storage.Client.Set(ctx, key, value, ttl).Err()
 	if err != nil {
 		return fmt.Errorf("cache.Set: %w", err)
@@ -26,7 +26,7 @@ func (r *CacheRepository) Set(ctx context.Context, key string, value interface{}
 	return nil
 }
 
-func (r *CacheRepository) Get(ctx context.Context, key string, dest interface{}) error {
+func (r *CacheRepository) Get(ctx context.Context, key string, dest any) error {
 	err := r.storage.Client.Get(ctx, key).Scan(dest)
 	if err != nil {
 		if redis.IsNil(err) {
