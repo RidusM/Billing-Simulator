@@ -1,17 +1,34 @@
 package clock
 
 import (
+	"context"
 	"sync"
 	"time"
 )
 
-type VirtualClock struct {
-	mu sync.RWMutex
-	offset time.Duration
+type Store interface {
+	SaveOffset(ctx context.Context, offset time.Duration) error
+	LoadOffset(ctx context.Context) (time.Duration, error)
 }
 
-func NewVirtualClock() *VirtualClock {
-	return &VirtualClock{}
+type VirtualClock struct {
+	mu     sync.RWMutex
+	offset time.Duration
+	store  Store
+}
+
+func NewVirtualClock(s Store) *VirtualClock {
+	vc := &VirtualClock{
+		store: s,
+	}
+
+	if s != nil {
+		if offset, err := s.LoadOffset(context.Background()); err == nil {
+			vc.offset = offset
+		}
+	}
+
+	return vc
 }
 
 func (vc *VirtualClock) Now() time.Time {
@@ -22,12 +39,22 @@ func (vc *VirtualClock) Now() time.Time {
 
 func (vc *VirtualClock) Advance(d time.Duration) {
 	vc.mu.Lock()
-	defer vc.mu.Unlock()
 	vc.offset += d
+	offset := vc.offset
+	vc.mu.Unlock()
+
+	if vc.store != nil {
+		_ = vc.store.SaveOffset(context.Background(), offset)
+	}
 }
 
 func (vc *VirtualClock) SetTime(t time.Time) {
 	vc.mu.Lock()
-	defer vc.mu.Unlock()
 	vc.offset = time.Until(t)
+	offset := vc.offset
+	vc.mu.Unlock()
+
+	if vc.store != nil {
+		_ = vc.store.SaveOffset(context.Background(), offset)
+	}
 }
