@@ -42,18 +42,6 @@ func defaultConfigs(baseCfg Config) *Config {
 	return cfg
 }
 
-func WithPassword(password string) Option {
-	return func(c *Config) {
-		c.Password = password
-	}
-}
-
-func WithDB(db int) Option {
-	return func(c *Config) {
-		c.DB = db
-	}
-}
-
 func WithTTL(ttl time.Duration) Option {
 	return func(c *Config) {
 		c.TTL = ttl

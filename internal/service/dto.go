@@ -4,12 +4,14 @@ import (
 	"time"
 
 	"bill-stripe-sim/internal/entity"
+
+	"github.com/google/uuid"
 )
 
 type InvoiceEvent struct {
-	ID             string               `json:"id"`
+	ID             uuid.UUID            `json:"id"`
 	PublicID       string               `json:"public_id"`
-	CustomerID     string               `json:"customer_id"`
+	CustomerID     uuid.UUID            `json:"customer_id"`
 	SubscriptionID *string              `json:"subscription_id,omitempty"`
 	Amount         int64                `json:"amount"`
 	Currency       string               `json:"currency"`
@@ -18,9 +20,9 @@ type InvoiceEvent struct {
 }
 
 type SubscriptionEvent struct {
-	ID               string                    `json:"id"`
+	ID               uuid.UUID                 `json:"id"`
 	PublicID         string                    `json:"public_id"`
-	CustomerID       string                    `json:"customer_id"`
+	CustomerID       uuid.UUID                 `json:"customer_id"`
 	Status           entity.SubscriptionStatus `json:"status"`
 	PriceID          string                    `json:"price_id"`
 	CurrentPeriodEnd time.Time                 `json:"current_period_end"`
