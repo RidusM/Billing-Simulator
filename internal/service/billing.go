@@ -33,7 +33,7 @@ type (
 		Create(ctx context.Context, s *entity.Subscription) error
 		GetByID(ctx context.Context, id uuid.UUID) (*entity.Subscription, error)
 		GetByPublicID(ctx context.Context, publicID string) (*entity.Subscription, error)
-		ListAll(ctx context.Context) ([]*entity.Subscription, error)
+		GetAllActive(ctx context.Context) ([]*entity.Subscription, error)
 		UpdateStatus(ctx context.Context, id uuid.UUID, status entity.SubscriptionStatus) error
 		UpdateNextBilling(ctx context.Context, id uuid.UUID, nextBilling time.Time, periodStart time.Time, periodEnd time.Time) error
 		GetActiveForRenewal(ctx context.Context, currentTime time.Time) ([]*entity.Subscription, error)
@@ -41,6 +41,7 @@ type (
 
 	CacheRepository interface {
 		Set(ctx context.Context, key string, value any, ttl time.Duration) error
+		SetBatch(ctx context.Context, items map[string]any, ttl time.Duration) error
 		Get(ctx context.Context, key string, dest any) error
 		Delete(ctx context.Context, key string) error
 		Lock(ctx context.Context, key string, ttl time.Duration) (func(), error)
@@ -328,38 +329,27 @@ func (bs *BillingService) RestoreCache(ctx context.Context) error {
 	const op = "service.billing.RestoreCache"
 	log := bs.log.With("op", op)
 	start := time.Now()
+	defer logSlowOperation(ctx, log, op, start)
 
-	log.LogAttrs(ctx, logger.InfoLevel, "starting cache restoration")
-
-	subs, err := bs.subscriptions.ListAll(ctx)
+	subs, err := bs.subscriptions.GetAllActive(ctx)
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	if len(subs) == 0 {
-		log.LogAttrs(ctx, logger.InfoLevel, "no subscriptions found for cache restoration")
-		return nil
+	items := make(map[string]any, len(subs))
+	for _, sub := range subs {
+		key := fmt.Sprintf("sub:%s", sub.ID)
+		items[key] = sub
 	}
 
-	var restored, failed int
-	for _, s := range subs {
-		key := fmt.Sprintf("sub:%s", s.ID)
-		if err = bs.cache.Set(ctx, key, s, time.Hour); err != nil {
-			failed++
-			log.LogAttrs(ctx, logger.WarnLevel, "failed to restore sub",
-				logger.String("sub_id", s.PublicID),
-				logger.String("public_sub_id", s.PublicID),
-				logger.Error(err),
-			)
-			continue
+	if len(items) > 0 {
+		if err := bs.cache.SetBatch(ctx, items, time.Hour); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
 		}
-		restored++
 	}
 
-	log.LogAttrs(ctx, logger.InfoLevel, "cache restoration completed",
-		logger.Int("total", len(subs)),
-		logger.Int("restored", restored),
-		logger.Int("failed", failed),
+	log.LogAttrs(ctx, logger.InfoLevel, "cache restored",
+		logger.Int("count", len(subs)),
 		logger.Duration("duration", time.Since(start)),
 	)
 

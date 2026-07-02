@@ -26,6 +26,18 @@ func (r *CacheRepository) Set(ctx context.Context, key string, value any, ttl ti
 	return nil
 }
 
+func (r *CacheRepository) SetBatch(ctx context.Context, items map[string]any, ttl time.Duration) error {
+	pipe := r.storage.Client.Pipeline()
+	for key, value := range items {
+		pipe.Set(ctx, key, value, ttl)
+	}
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("cache.SetBatch: %w", err)
+	}
+	return nil
+}
+
 func (r *CacheRepository) Get(ctx context.Context, key string, dest any) error {
 	err := r.storage.Client.Get(ctx, key).Scan(dest)
 	if err != nil {

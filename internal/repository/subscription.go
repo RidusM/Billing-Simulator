@@ -94,11 +94,12 @@ func (r *SubscriptionRepository) findFirst(ctx context.Context, op string, filte
 	return &s, nil
 }
 
-func (r *SubscriptionRepository) ListAll(ctx context.Context) ([]*entity.Subscription, error) {
-	const op = "repository.subscription.ListAll"
+func (r *SubscriptionRepository) GetAllActive(ctx context.Context) ([]*entity.Subscription, error) {
+	const op = "repository.subscription.GetAllActive"
 
 	sql, args, err := r.storage.Select("id", "public_id", "customer_id", "status", "price_id", "current_period_start", "current_period_end", "next_billing_at", "canceled_at", "created_at").
 		From("subscriptions").
+		Where(squirrel.Eq{"status": entity.SubscriptionStatusActive}).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
