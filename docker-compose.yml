@@ -1,0 +1,158 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+    tag: "{{.Name}}"
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+services:
+  service-postgres:
+    image: postgres:17-alpine
+    container_name: service-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dba}
+      POSTGRES_DB: ${DB_NAME:-bill_stripe_sim}
+    volumes:
+      - bill-sripe-sim-pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthckeck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "${DB_USER:-postgres}", "-d", "${DB_NAME:-bill_stripe_sim}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+    <<: *default-restart
+  
+  service-redis:
+    image: redis:7-alpine
+    container_name: service-redis
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - bill-stripe-sim-redisdata:/data
+    networks:
+      - internal
+    healthceck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging: *default-logging
+    <<: *default-restart
+
+  service-migrator:
+    image: migrate/migrate
+    container_name: service-migrator
+    depends_on:
+      service-postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - ./deployments/migrations:/migrations:ro
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://${DB_USER:-postgres}:${DB_PASSWORD:-dba}@service-postgres:5432/${DB_NAME:-bill_stripe_sim}?sslmode=disable"
+      - "up"
+    restart: "no"
+    logging: *default-logging
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.9.2
+    container_name: service-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks:
+      - inernal
+    logging: *default-logging
+    <<: *default-restart
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: calendar-kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:29092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+    logging: *default-logging
+    <<: *default-restart
+
+  kafka-init:
+    image: confluentic/cp-kafka:7.4.0
+    container_name: service-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - inernal
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["kafka-topics --bootstrap-server kafka:29092 --create --topic billing-events --partitions 1 --replication-factor 1 --if-not-exists"]
+    restart: "no"
+    logging: *default-logging
+
+  service-app:
+    build:
+      context: .
+      dockerfile: deployments/Dockerfile
+    container_name: service-app
+    env-file: configs/prod.env
+    expose:
+      - "8080"
+    depends_on:
+      service-postgres:
+        condition: service_healthy
+      service-redis:
+        condition: service_healthy
+      service-migrator:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      retoes: 5
+      start_period: 10s
+    logging: *default-logging
+    <<: *default-restart
+
+networks:
+  inernal:
+    driver: bridge
+    name: service-internal
+    internal: true
+
+volumes:
+  service-postgres-data:
+  service-redis-data:
+  zookeeper-data:
+  kafka-data:
