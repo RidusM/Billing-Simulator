@@ -6,8 +6,8 @@ import (
 )
 
 type EventSender interface {
-	SendInvoiceEvent(ctx context.Context, invoice *entity.Invoice) error
-	SendSubscriptionEvent(ctx context.Context, sub *entity.Subscription) error
+	SendInvoiceEvent(ctx context.Context, event *InvoiceEvent) error
+	SendSubscriptionEvent(ctx context.Context, event *SubscriptionEvent) error
 }
 
 type NotificationService struct {
@@ -21,9 +21,11 @@ func NewNotificationService(sender EventSender) *NotificationService {
 }
 
 func (s *NotificationService) NotifyInvoiceCreated(ctx context.Context, inv *entity.Invoice) error {
-	return s.sender.SendInvoiceEvent(ctx, inv)
+	event := mapInvoiceToEvent(inv)
+	return s.sender.SendInvoiceEvent(ctx, event)
 }
 
 func (s *NotificationService) NotifySubscriptionUpdated(ctx context.Context, sub *entity.Subscription) error {
-	return s.sender.SendSubscriptionEvent(ctx, sub)
+	event := mapSubscriptionToEvent(sub)
+	return s.sender.SendSubscriptionEvent(ctx, event)
 }

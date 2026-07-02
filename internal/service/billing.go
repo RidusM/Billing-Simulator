@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bill-stripe-sim/internal/clock"
 	"bill-stripe-sim/internal/entity"
 	"bill-stripe-sim/pkg/logger"
 	"context"
@@ -50,6 +49,10 @@ type (
 	TransactionManager interface {
 		ExecuteInTransaction(ctx context.Context, txName string, fn func(ctx context.Context) error) error
 	}
+
+	TimeProvider interface {
+		Now() time.Time
+	}
 )
 
 type BillingService struct {
@@ -57,9 +60,9 @@ type BillingService struct {
 	invoices      InvoiceRepository
 	subscriptions SubscriptionRepository
 	cache         CacheRepository
+	clock         TimeProvider
 	tm            TransactionManager
 	log           logger.Logger
-	clock         *clock.VirtualClock
 	notification  *NotificationService
 	sf            singleflight.Group
 }
@@ -71,7 +74,8 @@ func NewBillingService(
 	cache CacheRepository,
 	tm TransactionManager,
 	log logger.Logger,
-	clock *clock.VirtualClock,
+	clock TimeProvider,
+	notification *NotificationService,
 ) *BillingService {
 	return &BillingService{
 		customers:     customers,
@@ -81,6 +85,7 @@ func NewBillingService(
 		tm:            tm,
 		log:           log,
 		clock:         clock,
+		notification:  notification,
 	}
 }
 
