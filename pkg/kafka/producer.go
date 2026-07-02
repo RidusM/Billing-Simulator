@@ -30,12 +30,12 @@ func NewProducer(brokers []string, topic string, log logger.Logger) *Producer {
 			BatchSize:    _defaultBatchSize,
 			BatchTimeout: _defaultBatchTimeout,
 			Logger: kafka.LoggerFunc(func(msg string, args ...any) {
-				log.LogAttrs(context.Background(), logger.Info, "producer info",
+				log.LogAttrs(context.Background(), logger.InfoLevel, "producer info",
 					logger.String("message", fmt.Sprintf(msg, args...)),
 				)
 			}),
 			ErrorLogger: kafka.LoggerFunc(func(msg string, args ...any) {
-				log.LogAttrs(context.Background(), logger.Error, "producer error",
+				log.LogAttrs(context.Background(), logger.ErrorLevel, "producer error",
 					logger.String("error", fmt.Sprintf(msg, args...)),
 				)
 			}),

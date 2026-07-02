@@ -1,12 +1,15 @@
 package service
 
 import (
+	"bill-stripe-sim/internal/clock"
 	"bill-stripe-sim/internal/entity"
 	"bill-stripe-sim/pkg/logger"
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 )
 
 type (
@@ -30,6 +33,7 @@ type (
 		Create(ctx context.Context, s *entity.Subscription) error
 		GetByID(ctx context.Context, id uuid.UUID) (*entity.Subscription, error)
 		GetByPublicID(ctx context.Context, publicID string) (*entity.Subscription, error)
+		ListAll(ctx context.Context) ([]*entity.Subscription, error)
 		UpdateStatus(ctx context.Context, id uuid.UUID, status entity.SubscriptionStatus) error
 		UpdateNextBilling(ctx context.Context, id uuid.UUID, nextBilling time.Time, periodStart time.Time, periodEnd time.Time) error
 		GetActiveForRenewal(ctx context.Context, currentTime time.Time) ([]*entity.Subscription, error)
@@ -54,6 +58,9 @@ type BillingService struct {
 	cache         CacheRepository
 	tm            TransactionManager
 	log           logger.Logger
+	clock         *clock.VirtualClock
+	notification  *NotificationService
+	sf            singleflight.Group
 }
 
 func NewBillingService(
@@ -63,6 +70,7 @@ func NewBillingService(
 	cache CacheRepository,
 	tm TransactionManager,
 	log logger.Logger,
+	clock *clock.VirtualClock,
 ) *BillingService {
 	return &BillingService{
 		customers:     customers,
@@ -71,21 +79,289 @@ func NewBillingService(
 		cache:         cache,
 		tm:            tm,
 		log:           log,
+		clock:         clock,
 	}
 }
 
 func (bs *BillingService) CreateCustomer(ctx context.Context, email string) (*entity.Customer, error) {
-	return nil, nil
+	const op = "service.billing.CreateCustomer"
+	log := bs.log.With("op", op)
+	start := time.Now()
+	defer logSlowOperation(ctx, log, op, start)
+
+	log.LogAttrs(ctx, logger.InfoLevel, "starting customer creation",
+		logger.String("email", email),
+	)
+
+	var c *entity.Customer
+	err := bs.tm.ExecuteInTransaction(ctx, op, func(ctx context.Context) error {
+		c = &entity.Customer{
+			ID:        uuid.New(),
+			PublicID:  generatePublicID("cus"),
+			Email:     email,
+			CreatedAt: bs.clock.Now(),
+		}
+
+		if err := bs.customers.Create(ctx, c); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	log.LogAttrs(ctx, logger.InfoLevel, "customer created",
+		logger.String("customer_id", c.ID.String()),
+		logger.String("public_id", c.PublicID),
+		logger.Duration("duration", time.Since(start)),
+	)
+
+	return c, nil
 }
 
 func (bs *BillingService) CreateSubscription(ctx context.Context, customerID uuid.UUID, priceID string) (*entity.Subscription, error) {
-	return nil, nil
+	const op = "service.billing.CreateSubscription"
+	log := bs.log.With("op", op)
+	start := time.Now()
+	defer logSlowOperation(ctx, log, op, start)
+
+	log.LogAttrs(ctx, logger.InfoLevel, "starting subscription creation",
+		logger.String("customer_id", customerID.String()),
+		logger.String("price_id", priceID),
+	)
+
+	var sub *entity.Subscription
+	var inv *entity.Invoice
+
+	err := bs.tm.ExecuteInTransaction(ctx, op, func(ctx context.Context) error {
+		_, err := bs.customers.GetByID(ctx, customerID)
+		if err != nil {
+			return fmt.Errorf("check customer: %w", err)
+		}
+
+		now := bs.clock.Now()
+		_, nextBilling := calculateNextPeriod(now)
+
+		sub = &entity.Subscription{
+			ID:                 uuid.New(),
+			PublicID:           generatePublicID("sub"),
+			CustomerID:         customerID,
+			Status:             entity.SubscriptionStatusActive,
+			PriceID:            priceID,
+			CurrentPeriodStart: now,
+			CurrentPeriodEnd:   nextBilling,
+			NextBillingAt:      nextBilling,
+			CreatedAt:          now,
+		}
+
+		if err := bs.subscriptions.Create(ctx, sub); err != nil {
+			return fmt.Errorf("create subscription: %w", err)
+		}
+
+		inv = &entity.Invoice{
+			ID:             uuid.New(),
+			PublicID:       generatePublicID("in"),
+			SubscriptionID: &sub.ID,
+			CustomerID:     customerID,
+			Amount:         getRandomAmount(),
+			Currency:       getRandomCurrency(),
+			Status:         entity.InvoiceStatusPaid,
+			CreatedAt:      now,
+		}
+
+		if err := bs.invoices.Create(ctx, inv); err != nil {
+			return fmt.Errorf("create initial invoice: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	_ = bs.notification.NotifySubscriptionUpdated(ctx, sub)
+	_ = bs.notification.NotifyInvoiceCreated(ctx, inv)
+
+	log.LogAttrs(ctx, logger.InfoLevel, "subscription created",
+		logger.String("sub_id", sub.PublicID),
+		logger.String("inv_id", inv.PublicID),
+		logger.Duration("duration", time.Since(start)),
+	)
+
+	return sub, nil
 }
 
 func (bs *BillingService) CancelSubscription(ctx context.Context, subID string) error {
+	const op = "service.billing.CancelSubscription"
+	log := bs.log.With("op", op)
+	start := time.Now()
+	defer logSlowOperation(ctx, log, op, start)
+
+	log.LogAttrs(ctx, logger.InfoLevel, "start cancel subscription",
+		logger.String("sub_id", subID),
+	)
+
+	err := bs.tm.ExecuteInTransaction(ctx, op, func(ctx context.Context) error {
+		sub, err := bs.subscriptions.GetByPublicID(ctx, subID)
+		if err != nil {
+			return fmt.Errorf("get subscription: %w", err)
+		}
+
+		if sub.Status != entity.SubscriptionStatusActive && sub.Status != entity.SubscriptionStatusPastDue {
+			return fmt.Errorf("subscription is not active for cancel: %s", sub.Status)
+		}
+
+		return bs.subscriptions.UpdateStatus(ctx, sub.ID, entity.SubscriptionStatusCanceled)
+	})
+
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	_ = bs.cache.Delete(ctx, fmt.Sprintf("sub:%s", subID))
+
 	return nil
 }
 
 func (bs *BillingService) ProcessRenewal(ctx context.Context, subID uuid.UUID) error {
+	const op = "service.billing.ProcessRenewal"
+	log := bs.log.With("op", op, "sub_id", subID.String())
+	start := time.Now()
+	defer logSlowOperation(ctx, log, op, start)
+
+	var sub *entity.Subscription
+	var inv *entity.Invoice
+
+	err := bs.tm.ExecuteInTransaction(ctx, op, func(ctx context.Context) error {
+		var err error
+		sub, err = bs.subscriptions.GetByID(ctx, subID)
+		if err != nil {
+			return fmt.Errorf("get subscription: %w", err)
+		}
+
+		if sub.Status != entity.SubscriptionStatusActive && sub.Status != entity.SubscriptionStatusPastDue {
+			return fmt.Errorf("subscription is not active for renewal: %s", sub.Status)
+		}
+
+		if sub.NextBillingAt.After(bs.clock.Now()) {
+			return nil
+		}
+
+		now := bs.clock.Now()
+		inv = &entity.Invoice{
+			ID:             uuid.New(),
+			PublicID:       generatePublicID("in"),
+			SubscriptionID: &sub.ID,
+			CustomerID:     sub.CustomerID,
+			Amount:         getRandomAmount(),
+			Currency:       getRandomCurrency(),
+			Status:         simulatePayment(),
+			CreatedAt:      now,
+		}
+
+		if err := bs.invoices.Create(ctx, inv); err != nil {
+			return fmt.Errorf("create renewal invoice: %w", err)
+		}
+
+		if inv.Status == entity.InvoiceStatusPaid {
+			_, nextBilling := calculateNextPeriod(sub.CurrentPeriodEnd)
+			err = bs.subscriptions.UpdateNextBilling(ctx, sub.ID, nextBilling, sub.CurrentPeriodEnd, nextBilling)
+			if err != nil {
+				return fmt.Errorf("update subscription dates: %w", err)
+			}
+			_ = bs.subscriptions.UpdateStatus(ctx, sub.ID, entity.SubscriptionStatusActive)
+		} else {
+			_ = bs.subscriptions.UpdateStatus(ctx, sub.ID, entity.SubscriptionStatusPastDue)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	if inv != nil {
+		_ = bs.cache.Delete(ctx, fmt.Sprintf("sub:%s", subID))
+		_ = bs.notification.NotifySubscriptionUpdated(ctx, sub)
+		_ = bs.notification.NotifyInvoiceCreated(ctx, inv)
+	}
+
+	log.LogAttrs(ctx, logger.InfoLevel, "subscription renewal processed",
+		logger.Duration("duration", time.Since(start)),
+	)
+
+	return nil
+}
+
+func (bs *BillingService) GetSubscription(ctx context.Context, subID uuid.UUID) (*entity.Subscription, error) {
+	const op = "service.billing.GetSubscription"
+	key := fmt.Sprintf("sub:%s", subID)
+
+	var sub entity.Subscription
+	err := bs.cache.Get(ctx, key, &sub)
+	if err == nil && sub.ID != uuid.Nil {
+		return &sub, nil
+	}
+
+	v, err, _ := bs.sf.Do(key, func() (interface{}, error) {
+		s, err := bs.subscriptions.GetByID(ctx, subID)
+		if err != nil {
+			return nil, err
+		}
+
+		_ = bs.cache.Set(ctx, key, s, time.Hour)
+		return s, nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return v.(*entity.Subscription), nil
+}
+
+func (bs *BillingService) RestoreCache(ctx context.Context) error {
+	const op = "service.billing.RestoreCache"
+	log := bs.log.With("op", op)
+	start := time.Now()
+
+	log.LogAttrs(ctx, logger.InfoLevel, "starting cache restoration")
+
+	subs, err := bs.subscriptions.ListAll(ctx)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	if len(subs) == 0 {
+		log.LogAttrs(ctx, logger.InfoLevel, "no subscriptions found for cache restoration")
+		return nil
+	}
+
+	var restored, failed int
+	for _, s := range subs {
+		key := fmt.Sprintf("sub:%s", s.ID)
+		if err = bs.cache.Set(ctx, key, s, time.Hour); err != nil {
+			failed++
+			log.LogAttrs(ctx, logger.WarnLevel, "failed to restore sub",
+				logger.String("sub_id", s.PublicID),
+				logger.String("public_sub_id", s.PublicID),
+				logger.Error(err),
+			)
+			continue
+		}
+		restored++
+	}
+
+	log.LogAttrs(ctx, logger.InfoLevel, "cache restoration completed",
+		logger.Int("total", len(subs)),
+		logger.Int("restored", restored),
+		logger.Int("failed", failed),
+		logger.Duration("duration", time.Since(start)),
+	)
+
 	return nil
 }

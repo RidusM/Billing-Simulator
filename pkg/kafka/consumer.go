@@ -29,12 +29,12 @@ func NewConsumer(brokers []string, topic, groupID string, log logger.Logger) *Co
 		Topic:   topic,
 		GroupID: groupID,
 		Logger: kafka.LoggerFunc(func(msg string, args ...any) {
-			log.LogAttrs(staticMetadataCtx, logger.Info, "consumer info",
+			log.LogAttrs(staticMetadataCtx, logger.InfoLevel, "consumer info",
 				logger.String("message", fmt.Sprintf(msg, args...)),
 			)
 		}),
 		ErrorLogger: kafka.LoggerFunc(func(msg string, args ...any) {
-			log.LogAttrs(staticMetadataCtx, logger.Error, "consumer error",
+			log.LogAttrs(staticMetadataCtx, logger.ErrorLevel, "consumer error",
 				logger.String("error", fmt.Sprintf(msg, args...)),
 			)
 		}),

@@ -33,7 +33,7 @@ type Option func(*Config)
 
 func defaultConfigs() *Config {
 	return &Config{
-		Level:      Info,
+		Level:      InfoLevel,
 		MaxSize:    _defaultMaxSize,
 		MaxBackups: _defaultMaxBackups,
 		MaxAge:     _defaultMaxAge,

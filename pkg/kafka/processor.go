@@ -70,7 +70,7 @@ func (p *Processor) worker(ctx context.Context, handler Handler) {
 			if ctx.Err() != nil {
 				return
 			}
-			p.logger.LogAttrs(ctx, logger.Error, "fetch error",
+			p.logger.LogAttrs(ctx, logger.ErrorLevel, "fetch error",
 				logger.Any("error", err),
 			)
 			continue
@@ -89,7 +89,7 @@ func (p *Processor) processWithRetry(ctx context.Context, msg kafka.Message, han
 		lastErr = handler(ctx, msg)
 		if lastErr == nil {
 			if err := p.consumer.Commit(ctx, msg); err != nil {
-				p.logger.LogAttrs(ctx, logger.Error, "failed to commit message offset",
+				p.logger.LogAttrs(ctx, logger.ErrorLevel, "failed to commit message offset",
 					logger.Int64("offset", msg.Offset),
 					logger.String("topic", msg.Topic),
 					logger.Any("error", err),
@@ -99,7 +99,7 @@ func (p *Processor) processWithRetry(ctx context.Context, msg kafka.Message, han
 		}
 
 		if IsUnretryable(lastErr) {
-			p.logger.LogAttrs(ctx, logger.Error, "unretryable error, sending to DLQ",
+			p.logger.LogAttrs(ctx, logger.ErrorLevel, "unretryable error, sending to DLQ",
 				logger.String("topic", msg.Topic),
 				logger.Int64("offset", msg.Offset),
 				logger.Any("error", lastErr),
@@ -107,7 +107,7 @@ func (p *Processor) processWithRetry(ctx context.Context, msg kafka.Message, han
 			break
 		}
 
-		p.logger.LogAttrs(ctx, logger.Warn, "retryable error",
+		p.logger.LogAttrs(ctx, logger.WarnLevel, "retryable error",
 			logger.Int("attempt", attempt),
 			logger.Any("err", lastErr),
 		)
@@ -132,7 +132,7 @@ func (p *Processor) processWithRetry(ctx context.Context, msg kafka.Message, han
 
 	if p.dlq != nil {
 		if err := p.dlq.PublishError(ctx, msg, lastErr, p.cfg.MaxAttempts); err != nil {
-			p.logger.LogAttrs(ctx, logger.Error, "DLQ unavailable, skipping commit to prevent data loss",
+			p.logger.LogAttrs(ctx, logger.ErrorLevel, "DLQ unavailable, skipping commit to prevent data loss",
 				logger.Any("err", err),
 			)
 			return
@@ -140,7 +140,7 @@ func (p *Processor) processWithRetry(ctx context.Context, msg kafka.Message, han
 	}
 
 	if err := p.consumer.Commit(ctx, msg); err != nil {
-		p.logger.LogAttrs(ctx, logger.Error, "final commit error",
+		p.logger.LogAttrs(ctx, logger.ErrorLevel, "final commit error",
 			logger.Any("err", err),
 		)
 	}

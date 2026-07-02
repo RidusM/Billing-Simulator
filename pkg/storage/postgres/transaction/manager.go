@@ -78,7 +78,7 @@ func (tm *Manager) ExecuteInTransaction(
 			tm.cfg.MaxRetryDelay,
 		)
 
-		tm.logger.LogAttrs(ctx, logger.Warn, "retrying transaction",
+		tm.logger.LogAttrs(ctx, logger.WarnLevel, "retrying transaction",
 			logger.String("op", op),
 			logger.String("transaction", txName),
 			logger.Int("attempt", attempt),
@@ -125,7 +125,7 @@ func (tm *Manager) doTransaction(
 
 func (tm *Manager) safelyRollback(ctx context.Context, tx pgx.Tx) {
 	if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-		tm.logger.LogAttrs(ctx, logger.Error, "rollback failed",
+		tm.logger.LogAttrs(ctx, logger.ErrorLevel, "rollback failed",
 			logger.Any("error", err.Error()),
 		)
 	}

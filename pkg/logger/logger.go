@@ -8,10 +8,10 @@ import (
 type Level int
 
 const (
-	Debug Level = iota - 4
-	Info
-	Warn
-	Error
+	DebugLevel Level = iota - 4
+	InfoLevel
+	WarnLevel
+	ErrorLevel
 )
 
 type Attr struct {
@@ -37,13 +37,13 @@ type Logger interface {
 
 func (l Level) String() string {
 	switch l {
-	case Debug:
+	case DebugLevel:
 		return "DEBUG"
-	case Info:
+	case InfoLevel:
 		return "INFO"
-	case Warn:
+	case WarnLevel:
 		return "WARN"
-	case Error:
+	case ErrorLevel:
 		return "ERROR"
 	default:
 		return "UNKNOWN"
@@ -112,4 +112,8 @@ func Any(key string, value any) Attr {
 
 func Slice[T any](key string, value []T) Attr {
 	return Attr{Key: key, Value: value}
+}
+
+func Error(value error) Attr {
+	return Attr{Value: value}
 }

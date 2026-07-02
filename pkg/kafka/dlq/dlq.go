@@ -43,7 +43,7 @@ func (d *DLQ) PublishError(ctx context.Context, msg kafka.Message, err error, at
 
 	val, errMarshal := json.Marshal(payload)
 	if errMarshal != nil {
-		d.logger.LogAttrs(ctx, logger.Error, "failed to marshal dlq payload",
+		d.logger.LogAttrs(ctx, logger.ErrorLevel, "failed to marshal dlq payload",
 			logger.String("op", op),
 			logger.Any("err", errMarshal),
 		)

@@ -138,7 +138,7 @@ func (a *ZapAdapter) LogAttrs(ctx context.Context, level Level, msg string, attr
 }
 
 func (a *ZapAdapter) LogRequest(ctx context.Context, method, path string, status int, duration time.Duration) {
-	a.LogAttrs(ctx, Info, "request",
+	a.LogAttrs(ctx, InfoLevel, "request",
 		String("method", method),
 		String("path", path),
 		Int("status", status),
@@ -176,13 +176,13 @@ func sanitizeArgs(args []any) []any {
 
 func toZapLevel(level Level) zapcore.Level {
 	switch level {
-	case Debug:
+	case DebugLevel:
 		return zapcore.DebugLevel
-	case Info:
+	case InfoLevel:
 		return zapcore.InfoLevel
-	case Warn:
+	case WarnLevel:
 		return zapcore.WarnLevel
-	case Error:
+	case ErrorLevel:
 		return zapcore.ErrorLevel
 	default:
 		return zapcore.InfoLevel
@@ -218,6 +218,8 @@ func toZapFieldsFromAttrs(attrs []Attr) []zap.Field {
 	fields := make([]zap.Field, 0, len(attrs))
 	for _, a := range attrs {
 		switch val := a.Value.(type) {
+		case error:
+			fields = append(fields, zap.Error(val))
 		case string:
 			fields = append(fields, zap.String(a.Key, val))
 		case int:
