@@ -1,0 +1,236 @@
+basePath: /
+definitions:
+  http.BaseResponse:
+    properties:
+      data: {}
+    type: object
+  http.CreateCustomerRequest:
+    properties:
+      email:
+        type: string
+    required:
+    - email
+    type: object
+  http.CreateSubscriptionRequest:
+    properties:
+      customer_id:
+        type: string
+      price_id:
+        type: string
+    required:
+    - customer_id
+    - price_id
+    type: object
+  http.CustomerResponse:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      public_id:
+        type: string
+    type: object
+  http.ErrorResponse:
+    properties:
+      code:
+        type: string
+      details: {}
+      message:
+        type: string
+    type: object
+  http.HealthResponse:
+    properties:
+      service:
+        type: string
+      status:
+        type: string
+      time:
+        type: string
+    type: object
+  http.SubscriptionResponse:
+    properties:
+      current_period_ned:
+        type: string
+      customer_id:
+        type: string
+      id:
+        type: string
+      next_billing_at:
+        type: string
+      price_id:
+        type: string
+      public_id:
+        type: string
+      status:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: esandalov04@gmail.com
+    name: RidusM
+  description: API for simulating stripe billing operations
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0
+  termsOfService: httpL//swagger.io/terms
+  title: Billing Stripe Simulation API
+  version: "1.0"
+paths:
+  /health:
+    get:
+      description: Return service status and current timestamp. No authentication
+        required.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is healthy
+          schema:
+            $ref: '#/definitions/http.HealthResponse'
+      summary: Health Check
+      tags:
+      - system
+  /v1/customers:
+    post:
+      consumes:
+      - application/json
+      description: Registers a new customer by email for subsequent invoicing
+      parameters:
+      - description: Customer data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.CreateCustomerRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/http.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/http.CustomerResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Create customer
+      tags:
+      - customers
+  /v1/subscriptions:
+    post:
+      consumes:
+      - application/json
+      description: Binds the customer to a specific service plan (price_id)
+      parameters:
+      - description: Subscription data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.CreateSubscriptionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/http.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/http.SubscriptionResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Create subscription
+      tags:
+      - subscriptions
+  /v1/subscriptions/{id}:
+    get:
+      description: Returns full subscription data, including status and period dates
+      parameters:
+      - description: Subscription UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/http.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/http.SubscriptionResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Get subscription
+      tags:
+      - subscriptions
+  /v1/subscriptions/{id}/cancel:
+    post:
+      description: Changes the subscription status to 'canceled'. Further write-offs
+        are stopped.
+      parameters:
+      - description: UUID Subscription
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{"status": "canceled"}'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Cancel Subscription
+      tags:
+      - subscriptions
+swagger: "2.0"

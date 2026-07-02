@@ -33,6 +33,7 @@ install-tools: ## Install development tools
 	go install mvdan.cc/gofumpt@latest
 	go install github.com/segmentio/golines@latest
 	go install golang.org/x/tools/cmd/goimports@latest
+	go install github.com/swaggo/swag/cmd/swag@latest
 	go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	go install go.uber.org/mock/mockgen@latest
 	@echo "Tools installed"
@@ -98,8 +99,14 @@ lint-dotenv: ## Run dotenv-linter on config files
 lint-dotenv-fix: ## Fix .env files
 	dotenv-linter fix --no-backup -r configs/
 
+.PHONY: swagger
+swagger: ## Generate Swagger docs
+	@echo "Generating Swagger docs..."
+	@swag init -g internal/transport/http/routes.go --output docs
+	@echo "Swagger docs generated in docs/"
+
 .PHONY: pre-commit
-pre-commit: format lint lint-hadolint lint-dotenv ## Run all checks before commit
+pre-commit: format lint lint-hadolint lint-dotenv swagger ## Run all checks before commit
 	@echo "Pre-commit checks passed!"
 
 ##@ Testing

@@ -8,8 +8,19 @@ import (
 	"github.com/google/uuid"
 )
 
+// @Summary      Create customer
+// @Description  Registers a new customer by email for subsequent invoicing
+// @Tags         customers
+// @Accept       json
+// @Produce      json
+// @Param        request  body      CreateCustomerRequest  true  "Customer data"
+// @Success      201      {object}  BaseResponse{data=CustomerResponse}
+// @Failure      400      {object}  ErrorResponse
+// @Failure      409      {object}  ErrorResponse
+// @Failure      500      {object}  ErrorResponse
+// @Router       /v1/customers [post]
 func (h *BillingHandler) CreateCustomer(c *gin.Context) {
-	var req CreateCustomerReqeust
+	var req CreateCustomerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.respondError(c, http.StatusBadRequest, "invalid_request", err.Error(), nil)
 		return
@@ -26,6 +37,17 @@ func (h *BillingHandler) CreateCustomer(c *gin.Context) {
 	})
 }
 
+// @Summary      Create subscription
+// @Description  Binds the customer to a specific service plan (price_id)
+// @Tags         subscriptions
+// @Accept       json
+// @Produce      json
+// @Param        request  body      CreateSubscriptionRequest  true  "Subscription data"
+// @Success      201      {object}  BaseResponse{data=SubscriptionResponse}
+// @Failure      400      {object}  ErrorResponse
+// @Failure      404      {object}  ErrorResponse
+// @Failure      500      {object}  ErrorResponse
+// @Router       /v1/subscriptions [post]
 func (h *BillingHandler) CreateSubscription(c *gin.Context) {
 	var req CreateSubscriptionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -44,6 +66,15 @@ func (h *BillingHandler) CreateSubscription(c *gin.Context) {
 	})
 }
 
+// @Summary      Get subscription
+// @Description  Returns full subscription data, including status and period dates
+// @Tags         subscriptions
+// @Produce      json
+// @Param        id   path      string  true  "Subscription UUID"
+// @Success      200  {object}  BaseResponse{data=SubscriptionResponse}
+// @Failure      400  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse
+// @Router       /v1/subscriptions/{id} [get]
 func (h *BillingHandler) GetSubscription(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := uuid.Parse(idStr)
@@ -63,6 +94,15 @@ func (h *BillingHandler) GetSubscription(c *gin.Context) {
 	})
 }
 
+// @Summary      Cancel Subscription
+// @Description  Changes the subscription status to 'canceled'. Further write-offs are stopped.
+// @Tags         subscriptions
+// @Produce      json
+// @Param        id   path      string  true  "UUID Subscription"
+// @Success      200  {object}  map[string]string "{"status": "canceled"}"
+// @Failure      400  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse
+// @Router       /v1/subscriptions/{id}/cancel [post]
 func (h *BillingHandler) CancelSubscription(c *gin.Context) {
 	idStr := c.Param("id")
 
@@ -74,11 +114,16 @@ func (h *BillingHandler) CancelSubscription(c *gin.Context) {
 	h.respondJSON(c, http.StatusOK, gin.H{"status": "canceled"})
 }
 
+// @Summary      Health Check
+// @Description Return service status and current timestamp. No authentication required.
+// @Tags         system
+// @Produce      json
+// @Success      200  {object}  HealthResponse "Service is healthy"
+// @Router       /health [get]
 func (h *BillingHandler) Health(c *gin.Context) {
 	h.respondJSON(c, http.StatusOK, HealthResponse{
-		Status:  "ok",
-		Service: "auth-service",
-		Time:    time.Now(),
+		Status: "ok",
+		Time:   time.Now(),
 	})
 }
 
