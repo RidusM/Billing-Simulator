@@ -77,7 +77,11 @@ func New(baseCfg Config, log logger.Logger, opts ...Option) (*Postgres, error) {
 		)
 
 		time.Sleep(jitter)
-		currentBackoff = min(currentBackoff*_backoffMultiplier, cfg.MaxRetryDelay)
+		if currentBackoff < cfg.MaxRetryDelay/2 {
+    currentBackoff *= _backoffMultiplier
+} else {
+    currentBackoff = cfg.MaxRetryDelay
+}
 	}
 
 	return nil, fmt.Errorf("%s: failed to connect after %d attempts: %w", op, cfg.ConnAttempts, err)

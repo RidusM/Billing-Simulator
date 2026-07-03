@@ -7,8 +7,8 @@ import (
 
 const (
 	_defaultMaxAttempts    = 3
-	_defaultBaseRetryDelay = 10 * time.Millisecond
-	_defaultMaxRetryDelay  = 100 * time.Millisecond
+	_defaultBaseRetryDelay = 100 * time.Millisecond
+	_defaultMaxRetryDelay  = 5 * time.Second
 )
 
 type Config struct {

@@ -123,7 +123,7 @@ services:
       context: .
       dockerfile: deployments/Dockerfile
     container_name: service-app
-    env_file:: configs/prod.env
+    env_file: configs/prod.env
     expose:
       - "8080"
     depends_on:
@@ -145,7 +145,7 @@ services:
     <<: *default-restart
 
 networks:
-  inernal:
+  internal:
     driver: bridge
     name: service-internal
     internal: true

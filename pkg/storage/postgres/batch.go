@@ -31,25 +31,12 @@ func BatchInsert(ctx context.Context, qe QueryExecuter, sql string, rows [][]any
 	return nil
 }
 
-func BulkInsert(ctx context.Context, qe QueryExecuter, tableName any, columns []string, data [][]any) (int64, error) {
+func BulkInsert(ctx context.Context, qe QueryExecuter, tableName pgx.Identifier, columns []string, data [][]any) (int64, error) {
 	const op = "storage.postgres.BulkInsert"
 
-	var ident pgx.Identifier
-	switch t := tableName.(type) {
-	case string:
-		ident = pgx.Identifier{t}
-	case []string:
-		ident = pgx.Identifier(t)
-	case pgx.Identifier:
-		ident = t
-	default:
-		return 0, fmt.Errorf("%w", ErrInvalidTableName)
-	}
-
-	count, err := qe.CopyFrom(ctx, ident, columns, pgx.CopyFromRows(data))
-	if err != nil {
-		return 0, fmt.Errorf("%s: copy from: %w", op, err)
-	}
-
-	return count, nil
+	count, err := qe.CopyFrom(ctx, tableName, columns, pgx.CopyFromRows(data))
+    if err != nil {
+        return 0, fmt.Errorf("%s: copy from: %w", op, err)
+    }
+    return count, nil
 }

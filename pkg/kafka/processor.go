@@ -24,6 +24,7 @@ type Processor struct {
 
 	cfg Config
 	wg  sync.WaitGroup
+	cancel context.CancelFunc
 }
 
 func NewProcessor(
@@ -32,6 +33,10 @@ func NewProcessor(
 	logger logger.Logger,
 	opts ...ProcessorOption,
 ) (*Processor, error) {
+	if d == nil {
+        return nil, fmt.Errorf("kafka.NewProcessor: DLQ is required for guaranteed delivery")
+    }
+
 	cfg := DefaultConfig()
 
 	for _, opt := range opts {
@@ -51,6 +56,7 @@ func NewProcessor(
 }
 
 func (p *Processor) Start(ctx context.Context, handler Handler) {
+	ctx, p.cancel = context.WithCancel(ctx)
 	for range p.cfg.WorkersCount {
 		p.wg.Add(1)
 		go p.worker(ctx, handler)
@@ -58,7 +64,11 @@ func (p *Processor) Start(ctx context.Context, handler Handler) {
 }
 
 func (p *Processor) Stop() {
-	p.wg.Wait()
+	if p.cancel != nil {
+        p.cancel()
+    }
+    p.consumer.Close()
+    p.wg.Wait()
 }
 
 func (p *Processor) worker(ctx context.Context, handler Handler) {
@@ -127,17 +137,19 @@ func (p *Processor) processWithRetry(ctx context.Context, msg kafka.Message, han
 			return
 		}
 
-		currentBackoff = min(currentBackoff*_backoffMultiplier, p.cfg.MaxRetryDelay)
+		if currentBackoff < p.cfg.MaxRetryDelay/2 {
+    		currentBackoff *= _backoffMultiplier
+} else {
+    currentBackoff = p.cfg.MaxRetryDelay
+}
 	}
 
-	if p.dlq != nil {
-		if err := p.dlq.PublishError(ctx, msg, lastErr, p.cfg.MaxAttempts); err != nil {
-			p.logger.LogAttrs(ctx, logger.ErrorLevel, "DLQ unavailable, skipping commit to prevent data loss",
-				logger.Any("err", err),
-			)
-			return
-		}
-	}
+	if err := p.dlq.PublishError(ctx, msg, lastErr, p.cfg.MaxAttempts); err != nil {
+    p.logger.LogAttrs(ctx, logger.ErrorLevel, "dlq publish failed (buffer full + sync fallback failed)",
+        logger.Any("err", err),
+    )
+    return
+}
 
 	if err := p.consumer.Commit(ctx, msg); err != nil {
 		p.logger.LogAttrs(ctx, logger.ErrorLevel, "final commit error",

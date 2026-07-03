@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"time"
 )
 
@@ -29,10 +30,14 @@ type Config struct {
 }
 
 func (c Config) DSN() string {
-	return fmt.Sprintf(
-		"postgres://%s:%s@%s/%s?sslmode=%s",
-		c.User, c.Password, net.JoinHostPort(c.Host, c.Port), c.Name, c.SSLMode,
-	)
+    return fmt.Sprintf(
+        "postgres://%s:%s@%s/%s?sslmode=%s",
+        url.PathEscape(c.User),
+        url.PathEscape(c.Password),
+        net.JoinHostPort(c.Host, c.Port),
+        url.PathEscape(c.Name),
+        c.SSLMode,
+    )
 }
 
 func defaultConfigs(baseCfg Config) *Config {

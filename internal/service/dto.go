@@ -38,9 +38,9 @@ func mapInvoiceToEvent(i *entity.Invoice) *InvoiceEvent {
 	}
 
 	return &InvoiceEvent{
-		ID:             i.ID.String(),
+		ID:             i.ID,
 		PublicID:       i.PublicID,
-		CustomerID:     i.CustomerID.String(),
+		CustomerID:     i.CustomerID,
 		SubscriptionID: subID,
 		Amount:         i.Amount,
 		Currency:       i.Currency,
@@ -51,9 +51,9 @@ func mapInvoiceToEvent(i *entity.Invoice) *InvoiceEvent {
 
 func mapSubscriptionToEvent(s *entity.Subscription) *SubscriptionEvent {
 	return &SubscriptionEvent{
-		ID:               s.ID.String(),
+		ID:               s.ID,
 		PublicID:         s.PublicID,
-		CustomerID:       s.CustomerID.String(),
+		CustomerID:       s.CustomerID,
 		Status:           s.Status,
 		PriceID:          s.PriceID,
 		CurrentPeriodEnd: s.CurrentPeriodEnd,

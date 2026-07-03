@@ -88,14 +88,17 @@ func (tm *Manager) ExecuteInTransaction(
 		)
 
 		timer := time.NewTimer(jitter)
+defer timer.Stop()
 		select {
 		case <-timer.C:
-			currentBackoff = min(currentBackoff*_backoffMultiplier, tm.cfg.MaxRetryDelay)
+			if currentBackoff < tm.cfg.MaxRetryDelay/2 {
+    currentBackoff *= _backoffMultiplier
+} else {
+    currentBackoff = tm.cfg.MaxRetryDelay
+}
 		case <-ctx.Done():
-			timer.Stop()
 			return fmt.Errorf("%s: %s: %w", op, txName, ctx.Err())
 		}
-		timer.Stop()
 	}
 
 	return fmt.Errorf("%s: %s: %w", op, txName, HandleError(lastErr))

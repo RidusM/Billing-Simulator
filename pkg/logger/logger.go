@@ -58,39 +58,11 @@ func Int(key string, value int) Attr {
 	return Attr{Key: key, Value: value}
 }
 
-func Int8(key string, value int8) Attr {
-	return Attr{Key: key, Value: value}
-}
-
-func Int16(key string, value int16) Attr {
-	return Attr{Key: key, Value: value}
-}
-
-func Int32(key string, value int32) Attr {
-	return Attr{Key: key, Value: value}
-}
-
 func Int64(key string, value int64) Attr {
 	return Attr{Key: key, Value: value}
 }
 
 func Uint(key string, value uint) Attr {
-	return Attr{Key: key, Value: value}
-}
-
-func Uint8(key string, value uint8) Attr {
-	return Attr{Key: key, Value: value}
-}
-
-func Uint16(key string, value uint16) Attr {
-	return Attr{Key: key, Value: value}
-}
-
-func Uint32(key string, value uint32) Attr {
-	return Attr{Key: key, Value: value}
-}
-
-func Uint64(key string, value uint64) Attr {
 	return Attr{Key: key, Value: value}
 }
 
@@ -110,10 +82,6 @@ func Any(key string, value any) Attr {
 	return Attr{Key: key, Value: value}
 }
 
-func Slice[T any](key string, value []T) Attr {
-	return Attr{Key: key, Value: value}
-}
-
 func Error(value error) Attr {
-	return Attr{Value: value}
+    return Attr{Key: "error", Value: value}
 }

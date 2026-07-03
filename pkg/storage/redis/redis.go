@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"bill-stripe-sim/pkg/logger"
 	"context"
 	"errors"
 	"fmt"
@@ -16,16 +17,22 @@ const _defaultPingTimeout = 5 * time.Second
 type Redis struct {
 	Client   *redis.Client
 	CacheTTL time.Duration
+
+	log  logger.Logger
 }
 
-func New(baseCfg Config, opts ...Option) (*Redis, error) {
+func New(baseCfg Config, log logger.Logger, opts ...Option) (*Redis, error) {
 	const op = "storage.redis.New"
 
-	cfg := defaultConfigs(baseCfg)
-
-	for _, opt := range opts {
-		opt(cfg)
-	}
+	cfg := &Config{
+        TTL:          _defaultCacheTTL,
+        PoolSize:     _defaultPoolSize,
+        MinIdleConns: _defaultMinIdleConns,
+        PoolTimeout:  _defaultPoolTimeout,
+    }
+    for _, opt := range opts {
+        opt(cfg)
+    }
 
 	clientOpts := &redis.Options{
 		Addr:         net.JoinHostPort(cfg.Host, cfg.Port),
@@ -49,11 +56,13 @@ func New(baseCfg Config, opts ...Option) (*Redis, error) {
 	}
 
 	if err := redisotel.InstrumentTracing(rdb.Client); err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-	if err := redisotel.InstrumentMetrics(rdb.Client); err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
+    rdb.log.Warn("failed to instrument redis tracing, continuing without it",
+        "error", err)
+}
+if err := redisotel.InstrumentMetrics(rdb.Client); err != nil {
+    rdb.log.Warn("failed to instrument redis metrics, continuing without it",
+        "error", err)
+}
 
 	return rdb, nil
 }

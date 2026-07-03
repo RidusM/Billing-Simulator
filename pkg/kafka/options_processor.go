@@ -7,8 +7,8 @@ import (
 
 const (
 	_defaultMaxAttempts    = 3
-	_defaultBaseRetryDelay = 10 * time.Millisecond
-	_defaultMaxRetryDelay  = 100 * time.Millisecond
+	_defaultBaseRetryDelay = 1 * time.Second
+    _defaultMaxRetryDelay  = 30 * time.Second
 	_defaultWorkersCount   = 1
 )
 

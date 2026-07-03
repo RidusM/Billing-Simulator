@@ -7,7 +7,7 @@ type UnretryableError struct {
 }
 
 func (e UnretryableError) Error() string { return e.Err.Error() }
-func (e UnretryableError) Unwarp() error { return e.Err }
+func (e UnretryableError) Unwrap() error { return e.Err }
 
 func IsUnretryable(err error) bool {
 	var target UnretryableError
