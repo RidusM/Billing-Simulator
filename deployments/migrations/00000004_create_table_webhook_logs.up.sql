@@ -14,3 +14,5 @@ CREATE TABLE webhook_logs (
 );
 
 CREATE INDEX idx_webhook_logs_status ON webhook_logs(status);
+CREATE INDEX idx_webhook_logs_pending ON webhook_logs(created_at) WHERE status = 'pending';
+CREATE INDEX idx_webhook_logs_trace_id ON webhook_logs(trace_id);

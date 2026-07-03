@@ -14,3 +14,4 @@ CREATE TABLE invoices (
 
 CREATE INDEX idx_invoices_customer_id ON invoices(customer_id);
 CREATE INDEX idx_invoices_subscription_id ON invoices(subscription_id);
+CREATE INDEX idx_invoices_status ON invoices(status) WHERE status IN ('open', 'draft');

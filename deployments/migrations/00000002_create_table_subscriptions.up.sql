@@ -14,3 +14,4 @@ CREATE TABLE subscriptions (
 );
 
 CREATE INDEX idx_subscriptions_next_billing ON subscriptions(next_billing_at) WHERE status IN ('active', 'past_due');
+CREATE INDEX idx_subscriptions_customer_id ON subscriptions(customer_id);
