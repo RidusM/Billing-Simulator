@@ -47,7 +47,7 @@ func (s *Server) Start(ctx context.Context) error {
 		s.log.LogAttrs(ctx, logger.InfoLevel, "starting HTTP server",
 			logger.String("addr", s.server.Addr),
 		)
-		if err := s.server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 		return nil

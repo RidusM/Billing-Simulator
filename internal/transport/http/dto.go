@@ -32,7 +32,7 @@ type SubscriptionResponse struct {
 	CustomerID       uuid.UUID `json:"customer_id"`
 	Status           string    `json:"status"`
 	PriceID          string    `json:"price_id"`
-	CurrentPeriodEnd time.Time `json:"current_period_ned"`
+	CurrentPeriodEnd time.Time `json:"current_period_end"`
 	NextBillingAt    time.Time `json:"next_billing_at"`
 }
 

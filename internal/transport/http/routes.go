@@ -27,11 +27,17 @@ func (h *BillingHandler) setupRoutes() {
 	v1.Use()
 	{
 		v1.POST("/customers", h.CreateCustomer)
-		subs := h.router.Group("/subscriptions")
+		subs := v1.Group("/subscriptions")
 		subs.Use()
 		{
 			subs.POST("/", h.CreateSubscription)
 			subs.GET("/:id", h.GetSubscription)
+		}
+
+		time := v1.Group("/time")
+		{
+			time.POST("/advance", h.AdvanceTime)
+			time.GET("/current", h.GetCurrentTime)
 		}
 	}
 

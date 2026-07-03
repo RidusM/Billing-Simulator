@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -19,9 +20,15 @@ func NewCacheRepository(storage *redis.Redis) *CacheRepository {
 }
 
 func (r *CacheRepository) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
-	err := r.storage.Client.Set(ctx, key, value, ttl).Err()
+	const op = "repository.cache.Set"
+
+	data, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("cache.Set: %w", err)
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	if err := r.storage.Client.Set(ctx, key, data, ttl).Err(); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
 	}
 	return nil
 }
@@ -29,29 +36,31 @@ func (r *CacheRepository) Set(ctx context.Context, key string, value any, ttl ti
 func (r *CacheRepository) SetBatch(ctx context.Context, items map[string]any, ttl time.Duration) error {
 	pipe := r.storage.Client.Pipeline()
 	for key, value := range items {
-		pipe.Set(ctx, key, value, ttl)
+		data, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("cache.SetBatch marshal key=%s: %w", key, err)
+		}
+		pipe.Set(ctx, key, data, ttl)
 	}
-	_, err := pipe.Exec(ctx)
-	if err != nil {
+	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("cache.SetBatch: %w", err)
 	}
 	return nil
 }
 
 func (r *CacheRepository) Get(ctx context.Context, key string, dest any) error {
-	err := r.storage.Client.Get(ctx, key).Scan(dest)
+	data, err := r.storage.Client.Get(ctx, key).Bytes()
 	if err != nil {
 		if redis.IsNil(err) {
 			return nil
 		}
 		return fmt.Errorf("cache.Get: %w", err)
 	}
-	return nil
+	return json.Unmarshal(data, dest)
 }
 
 func (r *CacheRepository) Delete(ctx context.Context, key string) error {
-	err := r.storage.Client.Del(ctx, key).Err()
-	if err != nil {
+	if err := r.storage.Client.Del(ctx, key).Err(); err != nil {
 		return fmt.Errorf("cache.Delete: %w", err)
 	}
 	return nil
@@ -59,9 +68,7 @@ func (r *CacheRepository) Delete(ctx context.Context, key string) error {
 
 func (r *CacheRepository) Lock(ctx context.Context, key string, ttl time.Duration) (func(), error) {
 	const op = "repository.cache.Lock"
-
 	lockKey := fmt.Sprintf("lock:%s", key)
-
 	ok, err := r.storage.Client.SetNX(ctx, lockKey, "locked", ttl).Result()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
@@ -69,10 +76,7 @@ func (r *CacheRepository) Lock(ctx context.Context, key string, ttl time.Duratio
 	if !ok {
 		return nil, fmt.Errorf("%s: lock already held for key %s", op, key)
 	}
-
-	release := func() {
+	return func() {
 		_ = r.storage.Client.Del(context.Background(), lockKey).Err()
-	}
-
-	return release, nil
+	}, nil
 }

@@ -17,10 +17,10 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-dba}
       POSTGRES_DB: ${DB_NAME:-bill_stripe_sim}
     volumes:
-      - bill-sripe-sim-pgdata:/var/lib/postgresql/data
+      - bill-stripe-sim-pgdata:/var/lib/postgresql/data
     networks:
       - internal
-    healthckeck:
+    healthcheck:
       test: ["CMD-SHELL", "pg_isready", "-U", "${DB_USER:-postgres}", "-d", "${DB_NAME:-bill_stripe_sim}"]
       interval: 10s
       timeout: 5s
@@ -34,10 +34,10 @@ services:
     container_name: service-redis
     command: redis-server --save 60 1 --loglevel warning
     volumes:
-      - bill-stripe-sim-redisdata:/data
+      - bill-stripe-sim-redis-data:/data
     networks:
       - internal
-    healthceck:
+    healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
@@ -71,7 +71,7 @@ services:
     volumes:
       - zookeeper-data:/var/lib/zookeeper/data
     networks:
-      - inernal
+      - internal
     logging: *default-logging
     <<: *default-restart
 
@@ -106,13 +106,13 @@ services:
     <<: *default-restart
 
   kafka-init:
-    image: confluentic/cp-kafka:7.4.0
+    image: confluentinc/cp-kafka:7.4.0
     container_name: service-kafka-init
     depends_on:
       kafka:
         condition: service_healthy
     networks:
-      - inernal
+      - internal
     entrypoint: ["/bin/sh", "-c"]
     command: ["kafka-topics --bootstrap-server kafka:29092 --create --topic billing-events --partitions 1 --replication-factor 1 --if-not-exists"]
     restart: "no"
@@ -123,7 +123,7 @@ services:
       context: .
       dockerfile: deployments/Dockerfile
     container_name: service-app
-    env-file: configs/prod.env
+    env_file:: configs/prod.env
     expose:
       - "8080"
     depends_on:
@@ -140,7 +140,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      retoes: 5
       start_period: 10s
     logging: *default-logging
     <<: *default-restart
@@ -152,7 +151,7 @@ networks:
     internal: true
 
 volumes:
-  service-postgres-data:
-  service-redis-data:
+  bill-stripe-sim-pgdata:
+  bill-stripe-sim-redis-data:
   zookeeper-data:
   kafka-data:
