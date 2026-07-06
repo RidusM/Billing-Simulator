@@ -30,7 +30,7 @@ func (r *redisStore) SaveOffset(ctx context.Context, offset time.Duration) error
 }
 
 func (r *redisStore) LoadOffset(ctx context.Context) (time.Duration, error) {
-	const op = "clock.redisStore.SaveOffset"
+	const op = "clock.redisStore.LoadOffset"
 
 	val, err := r.storage.Client.Get(ctx, clockOffsetKey).Result()
 	if err != nil {

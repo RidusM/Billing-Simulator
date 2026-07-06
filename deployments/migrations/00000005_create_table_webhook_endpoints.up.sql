@@ -4,8 +4,8 @@ CREATE TABLE webhook_endpoints (
     url VARCHAR(512) NOT NULL,
     secret VARCHAR(128) NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE INDEX idx_webhook_endpoints_customer_id ON webhook_endpoints(customer_id);

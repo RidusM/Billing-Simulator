@@ -50,6 +50,27 @@ func (r *SubscriptionRepository) Create(ctx context.Context, s *entity.Subscript
 	return nil
 }
 
+func (r *SubscriptionRepository) GetByCustomerID(ctx context.Context, customerID uuid.UUID) ([]*entity.Subscription, error) {
+	const op = "repository.subscription.GetByCustomerID"
+	sql, args, err := r.storage.
+		Select("id", "public_id", "customer_id", "status", "price_id", "current_period_start", "current_period_end", "next_billing_at", "canceled_at", "created_at").
+		From("subscriptions").
+		Where(squirrel.Eq{"customer_id": customerID}).
+		OrderBy("created_at DESC").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	rows, err := r.executor(ctx).Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	return scanSubscriptions(op, rows)
+}
+
 func (r *SubscriptionRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Subscription, error) {
 	return r.findFirst(ctx, "repository.subscription.GetByID", squirrel.Eq{"id": id})
 }
@@ -236,28 +257,29 @@ func (r *SubscriptionRepository) GetActiveForRenewal(
 	}
 	defer rows.Close()
 
-	var subs []*entity.Subscription
-	for rows.Next() {
-		var s entity.Subscription
-		err = rows.Scan(
-			&s.ID,
-			&s.PublicID,
-			&s.CustomerID,
-			&s.Status,
-			&s.PriceID,
-			&s.CurrentPeriodStart,
-			&s.CurrentPeriodEnd,
-			&s.NextBillingAt,
-			&s.CanceledAt,
-			&s.CreatedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
-		}
-		subs = append(subs, &s)
+	return scanSubscriptions(op, rows)
+}
+
+func (r *SubscriptionRepository) Cancel(ctx context.Context, id uuid.UUID, canceledAt time.Time) error {
+	const op = "repository.subscription.Cancel"
+	sql, args, err := r.storage.
+		Update("subscriptions").
+		Set("status", entity.SubscriptionStatusCanceled).
+		Set("canceled_at", canceledAt).
+		Where(squirrel.Eq{"id": id}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	return subs, nil
+	tag, err := r.executor(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%s: %w", op, entity.ErrSubscriptionNotFound)
+	}
+	return nil
 }
 
 func (r *SubscriptionRepository) executor(ctx context.Context) postgres.QueryExecuter {

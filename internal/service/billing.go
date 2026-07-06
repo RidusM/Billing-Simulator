@@ -38,6 +38,10 @@ type (
 		GetActiveForRenewal(ctx context.Context, currentTime time.Time) ([]*entity.Subscription, error)
 	}
 
+	PriceRepository interface {
+		GetByID(ctx context.Context, id string) (*entity.Price, error)
+	}
+
 	CacheRepository interface {
 		Set(ctx context.Context, key string, value any, ttl time.Duration) error
 		SetBatch(ctx context.Context, items map[string]any, ttl time.Duration) error
@@ -59,6 +63,7 @@ type BillingService struct {
 	customers     CustomerRepository
 	invoices      InvoiceRepository
 	subscriptions SubscriptionRepository
+	price         PriceRepository
 	cache         CacheRepository
 	clock         TimeProvider
 	tm            TransactionManager
@@ -142,13 +147,13 @@ func (bs *BillingService) CreateSubscription(ctx context.Context, customerID uui
 	var inv *entity.Invoice
 
 	err := bs.tm.ExecuteInTransaction(ctx, op, func(ctx context.Context) error {
-		_, err := bs.customers.GetByID(ctx, customerID)
+		price, err := bs.price.GetByID(ctx, priceID)
 		if err != nil {
 			return fmt.Errorf("check customer: %w", err)
 		}
 
 		now := bs.clock.Now()
-		_, nextBilling := calculateNextPeriod(now)
+		_, nextBilling := price.NextBillingDate(now)
 
 		sub = &entity.Subscription{
 			ID:                 uuid.New(),
@@ -168,11 +173,11 @@ func (bs *BillingService) CreateSubscription(ctx context.Context, customerID uui
 
 		inv = &entity.Invoice{
 			ID:             uuid.New(),
-			PublicID:       generatePublicID("in"),
+			PublicID:       generatePublicID("inv"),
 			SubscriptionID: &sub.ID,
 			CustomerID:     customerID,
-			Amount:         getRandomAmount(),
-			Currency:       getRandomCurrency(),
+			Amount:         price.Amount,
+			Currency:       price.Currency,
 			Status:         entity.InvoiceStatusPaid,
 			CreatedAt:      now,
 		}
@@ -188,8 +193,18 @@ func (bs *BillingService) CreateSubscription(ctx context.Context, customerID uui
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	_ = bs.notification.NotifySubscriptionUpdated(ctx, sub)
-	_ = bs.notification.NotifyInvoiceCreated(ctx, inv)
+	if err := bs.notification.NotifySubscriptionUpdated(ctx, sub); err != nil {
+		bs.log.LogAttrs(ctx, logger.ErrorLevel, "failed to notify subscription updated",
+			logger.String("sub_id", sub.PublicID),
+			logger.Any("error", err),
+		)
+	}
+	if err := bs.notification.NotifyInvoiceCreated(ctx, inv); err != nil {
+		bs.log.LogAttrs(ctx, logger.ErrorLevel, "failed to notify invoice created",
+			logger.String("inv_id", inv.PublicID),
+			logger.Any("error", err),
+		)
+	}
 
 	log.LogAttrs(ctx, logger.InfoLevel, "subscription created",
 		logger.String("sub_id", sub.PublicID),
@@ -248,6 +263,11 @@ func (bs *BillingService) ProcessRenewal(ctx context.Context, subID uuid.UUID) e
 			return fmt.Errorf("get subscription: %w", err)
 		}
 
+		price, err := bs.price.GetByID(ctx, sub.PriceID)
+		if err != nil {
+			return fmt.Errorf("get price: %w", err)
+		}
+
 		if sub.Status != entity.SubscriptionStatusActive && sub.Status != entity.SubscriptionStatusPastDue {
 			return fmt.Errorf("subscription is not active for renewal: %s", sub.Status)
 		}
@@ -262,8 +282,8 @@ func (bs *BillingService) ProcessRenewal(ctx context.Context, subID uuid.UUID) e
 			PublicID:       generatePublicID("in"),
 			SubscriptionID: &sub.ID,
 			CustomerID:     sub.CustomerID,
-			Amount:         getRandomAmount(),
-			Currency:       getRandomCurrency(),
+			Amount:         price.Amount,
+			Currency:       price.Currency,
 			Status:         simulatePayment(),
 			CreatedAt:      now,
 		}
@@ -273,7 +293,8 @@ func (bs *BillingService) ProcessRenewal(ctx context.Context, subID uuid.UUID) e
 		}
 
 		if inv.Status == entity.InvoiceStatusPaid {
-			_, nextBilling := calculateNextPeriod(sub.CurrentPeriodEnd)
+			now := bs.clock.Now()
+			_, nextBilling := price.NextBillingDate(now)
 			err = bs.subscriptions.UpdateNextBilling(ctx, sub.ID, nextBilling, sub.CurrentPeriodEnd, nextBilling)
 			if err != nil {
 				return fmt.Errorf("update subscription dates: %w", err)
@@ -292,8 +313,18 @@ func (bs *BillingService) ProcessRenewal(ctx context.Context, subID uuid.UUID) e
 
 	if inv != nil {
 		_ = bs.cache.Delete(ctx, fmt.Sprintf("sub:%s", subID))
-		_ = bs.notification.NotifySubscriptionUpdated(ctx, sub)
-		_ = bs.notification.NotifyInvoiceCreated(ctx, inv)
+		if err := bs.notification.NotifySubscriptionUpdated(ctx, sub); err != nil {
+			bs.log.LogAttrs(ctx, logger.ErrorLevel, "failed to notify subscription updated",
+				logger.String("sub_id", sub.PublicID),
+				logger.Any("error", err),
+			)
+		}
+		if err := bs.notification.NotifyInvoiceCreated(ctx, inv); err != nil {
+			bs.log.LogAttrs(ctx, logger.ErrorLevel, "failed to notify invoice created",
+				logger.String("inv_id", inv.PublicID),
+				logger.Any("error", err),
+			)
+		}
 	}
 
 	log.LogAttrs(ctx, logger.InfoLevel, "subscription renewal processed",

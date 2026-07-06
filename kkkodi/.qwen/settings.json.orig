@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\deployments\\migrations/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\internal\\entity/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\internal\\clock/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\internal\\repository/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\internal\\service/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\cmd\\bill-stripe-sim/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\internal\\app/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\internal\\transport/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\internal\\config/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\pkg/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\internal\\transport\\http/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\internal\\transport\\ws/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\internal\\transport\\kafka/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\pkg\\storage/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\pkg\\storage\\postgres/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\pkg\\storage\\redis/**)",
+      "Read(C:\\Users\\esandalov\\Desktop\\221\\kodik\\pkg\\kafka/**)"
+    ]
+  },
+  "$version": 4
+}

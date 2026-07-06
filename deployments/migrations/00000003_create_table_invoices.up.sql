@@ -7,7 +7,7 @@ CREATE TABLE invoices (
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
     amount BIGINT NOT NULL,
     currency VARCHAR(3) DEFAULT 'USD',
-    status invoice_status NOT NULL DEFAULT 'open',
+    status invoice_status NOT NULL,
     attempt_count INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL
 );

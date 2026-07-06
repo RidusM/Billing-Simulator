@@ -57,11 +57,20 @@ func (r *CustomerRepository) GetByPublicID(ctx context.Context, publicID string)
 	return r.findFirst(ctx, "repository.customer.GetByPublicID", squirrel.Eq{"public_id": publicID})
 }
 
+func (r *CustomerRepository) GetByEmail(ctx context.Context, email string) (*entity.Customer, error) {
+	return r.findFirst(ctx, "repository.customer.GetByEmail", squirrel.Eq{"email": email})
+}
+
 func (r *CustomerRepository) findFirst(ctx context.Context, op string, filter any) (*entity.Customer, error) {
+	if eq, ok := filter.(squirrel.Eq); ok && len(eq) == 0 {
+		return nil, fmt.Errorf("%s: empty filter", op)
+	}
+
 	sql, args, err := r.storage.
 		Select("id", "public_id", "email", "created_at").
 		From("customers").
 		Where(filter).
+		Limit(1).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)

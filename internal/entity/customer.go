@@ -15,16 +15,16 @@ type Customer struct {
 	CreatedAt time.Time
 }
 
-func NewCustomer(email string) *Customer {
+func NewCustomer(email string, now time.Time) *Customer {
 	return &Customer{
-		ID: uuid.New(),
-		PublicID: generatePublicID("cus"),
-		Email: email,
-		CreatedAt: time.Now().UTC(),
+		ID:        uuid.New(),
+		PublicID:  generatePublicID("cus"),
+		Email:     email,
+		CreatedAt: now.UTC(),
 	}
 }
 
-func generatePublicID(prefix string) string{
+func generatePublicID(prefix string) string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return prefix + "_" + hex.EncodeToString(b)

@@ -10,9 +10,13 @@ CREATE TABLE webhook_logs (
     response_code INT,
     attempt INT NOT NULL DEFAULT 1,
     error_message TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    next_attempt_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE INDEX idx_webhook_logs_status ON webhook_logs(status);
-CREATE INDEX idx_webhook_logs_pending ON webhook_logs(created_at) WHERE status = 'pending';
+CREATE INDEX idx_webhook_logs_retry_manager 
+ON webhook_logs(next_attempt_at) 
+WHERE status = 'pending';
+
 CREATE INDEX idx_webhook_logs_trace_id ON webhook_logs(trace_id);

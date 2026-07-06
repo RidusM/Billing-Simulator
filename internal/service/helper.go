@@ -39,9 +39,9 @@ func generatePublicID(prefix string) string {
 	return fmt.Sprintf("%s_%s", prefix, hex.EncodeToString(b))
 }
 
-func calculateNextPeriod(currentEnd time.Time) (start, end time.Time) {
+func calculateNextPeriod(currentEnd time.Time, price *entity.Price) (start, end time.Time) {
 	start = currentEnd
-	end = currentEnd.AddDate(0, 1, 0)
+	end = price.NextBillingDate(currentEnd)
 	return
 }
 
@@ -60,4 +60,25 @@ func simulatePayment() entity.InvoiceStatus {
 		return entity.InvoiceStatusPaid
 	}
 	return entity.InvoiceStatusOpen
+}
+
+func (bs *BillingService) getPrice(ctx context.Context, priceID string) (*entity.Price, error) {
+	// Кэшируем в Redis
+	cacheKey := fmt.Sprintf("price:%s", priceID)
+
+	var price *entity.Price
+	if err := bs.cache.Get(ctx, cacheKey, &price); err == nil && price.ID != "" {
+		return price, nil
+	}
+
+	// Получаем из БД (нужно добавить PriceRepository)
+	price, err := bs.price.GetByID(ctx, priceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Кэшируем на 1 час
+	_ = bs.cache.Set(ctx, cacheKey, price, time.Hour)
+
+	return price, nil
 }

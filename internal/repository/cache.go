@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"bill-stripe-sim/pkg/storage/redis"
+
+	"github.com/google/uuid"
 )
 
 type CacheRepository struct {
@@ -49,14 +51,40 @@ func (r *CacheRepository) SetBatch(ctx context.Context, items map[string]any, tt
 }
 
 func (r *CacheRepository) Get(ctx context.Context, key string, dest any) error {
+	const op = "repository.cache.Get"
 	data, err := r.storage.Client.Get(ctx, key).Bytes()
 	if err != nil {
 		if redis.IsNil(err) {
-			return nil
+			return fmt.Errorf("%s: cache miss: %w", op)
 		}
-		return fmt.Errorf("cache.Get: %w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
-	return json.Unmarshal(data, dest)
+	if err := json.Unmarshal(data, dest); err != nil {
+		return fmt.Errorf("%s: unmarshal: %w", op, err)
+	}
+	return nil
+}
+
+func (r *CacheRepository) GetBatch(ctx context.Context, keys []string) (map[string][]byte, error) {
+	const op = "repository.cache.GetBatch"
+	pipe := r.storage.Client.Pipeline()
+	cmds := make(map[string]*redis.StringCmd, len(keys))
+
+	for _, key := range keys {
+		cmds[key] = pipe.Get(ctx, key)
+	}
+
+	if _, err := pipe.Exec(ctx); err != nil && !redis.IsNil(err) {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	result := make(map[string][]byte, len(keys))
+	for key, cmd := range cmds {
+		if val, err := cmd.Result(); err == nil {
+			result[key] = []byte(val)
+		}
+	}
+	return result, nil
 }
 
 func (r *CacheRepository) Delete(ctx context.Context, key string) error {
@@ -69,14 +97,41 @@ func (r *CacheRepository) Delete(ctx context.Context, key string) error {
 func (r *CacheRepository) Lock(ctx context.Context, key string, ttl time.Duration) (func(), error) {
 	const op = "repository.cache.Lock"
 	lockKey := fmt.Sprintf("lock:%s", key)
-	ok, err := r.storage.Client.SetNX(ctx, lockKey, "locked", ttl).Result()
+	lockValue := uuid.New().String()
+
+	ok, err := r.storage.Client.SetNX(ctx, lockKey, lockValue, ttl).Result()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	if !ok {
 		return nil, fmt.Errorf("%s: lock already held for key %s", op, key)
 	}
+
 	return func() {
-		_ = r.storage.Client.Del(context.Background(), lockKey).Err()
+		var luaRelease = `
+			if redis.call("get", KEYS[1]) == ARGV[1] then
+				return redis.call("del", KEYS[1])
+			else
+				return 0
+			end`
+		_ = r.storage.Client.Eval(context.Background(), luaRelease, []string{lockKey}, lockValue).Err()
 	}, nil
+}
+
+func (r *CacheRepository) Exists(ctx context.Context, key string) (bool, error) {
+	const op = "repository.cache.Exists"
+	exists, err := r.storage.Client.Exists(ctx, key).Result()
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", op, err)
+	}
+	return exists > 0, nil
+}
+
+func (r *CacheRepository) Incr(ctx context.Context, key string) (int64, error) {
+	const op = "repository.cache.Incr"
+	val, err := r.storage.Client.Incr(ctx, key).Result()
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", op, err)
+	}
+	return val, nil
 }

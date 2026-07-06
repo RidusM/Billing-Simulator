@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"bill-stripe-sim/internal/entity"
 	"bill-stripe-sim/pkg/storage/postgres"
@@ -47,6 +48,71 @@ func (r *InvoiceRepository) Create(ctx context.Context, i *entity.Invoice) error
 	}
 
 	return nil
+}
+
+func (r *InvoiceRepository) GetByStatus(ctx context.Context, status entity.InvoiceStatus, limit uint64) ([]*entity.Invoice, error) {
+	const op = "repository.invoice.GetByStatus"
+	sql, args, err := r.storage.
+		Select("id", "public_id", "subscription_id", "customer_id", "amount", "currency", "status", "attempt_count", "created_at").
+		From("invoices").
+		Where(squirrel.Eq{"status": status}).
+		OrderBy("created_at ASC").
+		Limit(limit).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	rows, err := r.executor(ctx).Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	var invoices []*entity.Invoice
+	for rows.Next() {
+		var i entity.Invoice
+		err = rows.Scan(&i.ID, &i.PublicID, &i.SubscriptionID, &i.CustomerID, &i.Amount, &i.Currency, &i.Status, &i.AttemptCount, &i.CreatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+		invoices = append(invoices, &i)
+	}
+	return invoices, nil
+}
+
+func (r *InvoiceRepository) GetOverdue(ctx context.Context, before time.Time, limit uint64) ([]*entity.Invoice, error) {
+	const op = "repository.invoice.GetOverdue"
+	sql, args, err := r.storage.
+		Select("id", "public_id", "subscription_id", "customer_id", "amount", "currency", "status", "attempt_count", "created_at").
+		From("invoices").
+		Where(squirrel.And{
+			squirrel.Eq{"status": entity.InvoiceStatusOpen},
+			squirrel.Lt{"created_at": before},
+		}).
+		OrderBy("created_at ASC").
+		Limit(limit).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	rows, err := r.executor(ctx).Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	var invoices []*entity.Invoice
+	for rows.Next() {
+		var i entity.Invoice
+		err = rows.Scan(&i.ID, &i.PublicID, &i.SubscriptionID, &i.CustomerID, &i.Amount, &i.Currency, &i.Status, &i.AttemptCount, &i.CreatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+		invoices = append(invoices, &i)
+	}
+	return invoices, nil
 }
 
 func (r *InvoiceRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Invoice, error) {
