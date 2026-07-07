@@ -30,8 +30,8 @@ func (r *CustomerRepository) Create(ctx context.Context, c *entity.Customer) err
 
 	sql, args, err := r.storage.Builder.
 		Insert("customers").
-		Columns("id", "public_id", "email", "created_at").
-		Values(c.ID, c.PublicID, c.Email, c.CreatedAt).
+		Columns("id", "public_id", "email", "name", "phone", "metadata", "created_at", "updated_at").
+		Values(c.ID, c.PublicID, c.Email, c.Name, c.Phone, c.Metadata, c.CreatedAt, c.UpdatedAt).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
@@ -61,44 +61,17 @@ func (r *CustomerRepository) GetByEmail(ctx context.Context, email string) (*ent
 	return r.findFirst(ctx, "repository.customer.GetByEmail", squirrel.Eq{"email": email})
 }
 
-func (r *CustomerRepository) findFirst(ctx context.Context, op string, filter any) (*entity.Customer, error) {
-	if eq, ok := filter.(squirrel.Eq); ok && len(eq) == 0 {
-		return nil, fmt.Errorf("%s: empty filter", op)
-	}
+func (r *CustomerRepository) Update(ctx context.Context, c *entity.Customer) error {
+	const op = "repository.customer.Update"
 
-	sql, args, err := r.storage.
-		Select("id", "public_id", "email", "created_at").
-		From("customers").
-		Where(filter).
-		Limit(1).
-		ToSql()
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	var c entity.Customer
-	err = r.executor(ctx).QueryRow(ctx, sql, args...).Scan(
-		&c.ID,
-		&c.PublicID,
-		&c.Email,
-		&c.CreatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%s: %w", op, entity.ErrCustomerNotFound)
-		}
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	return &c, nil
-}
-
-func (r *CustomerRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	const op = "repository.customer.Delete"
-
-	sql, args, err := r.storage.
-		Delete("customers").
-		Where(squirrel.Eq{"id": id}).
+	sql, args, err := r.storage.Builder.
+		Update("customers").
+		Set("email", c.Email).
+		Set("name", c.Name).
+		Set("phone", c.Phone).
+		Set("metadata", c.Metadata).
+		Set("updated_at", c.UpdatedAt).
+		Where(squirrel.Eq{"id": c.ID}).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
@@ -113,6 +86,68 @@ func (r *CustomerRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 
 	return nil
+}
+
+func (r *CustomerRepository) SoftDelete(ctx context.Context, id uuid.UUID) error {
+	const op = "repository.customer.SoftDelete"
+
+	sql, args, err := r.storage.Builder.
+		Update("customers").
+		Set("deleted_at", "NOW()").
+		Where(squirrel.And{
+			squirrel.Eq{"id": id},
+			squirrel.Expr("deleted_at IS NULL"),
+		}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	tag, err := r.executor(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%s: %w", op, entity.ErrCustomerNotFound)
+	}
+
+	return nil
+}
+
+func (r *CustomerRepository) findFirst(ctx context.Context, op string, filter squirrel.Sqlizer) (*entity.Customer, error) {
+	if eq, ok := filter.(squirrel.Eq); ok && len(eq) == 0 {
+		return nil, fmt.Errorf("%s: empty filter", op)
+	}
+
+	sql, args, err := r.storage.
+		Select("id", "public_id", "email", "name", "phone", "metadata", "created_at", "updated_at").
+		From("customers").
+		Where(squirrel.And{filter, squirrel.Expr("deleted_at IS NULL")}).
+		Limit(1).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	var c entity.Customer
+	err = r.executor(ctx).QueryRow(ctx, sql, args...).Scan(
+		&c.ID,
+		&c.PublicID,
+		&c.Email,
+		&c.Name,
+		&c.Phone,
+		&c.Metadata,
+		&c.CreatedAt,
+		&c.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%s: %w", op, entity.ErrCustomerNotFound)
+		}
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return &c, nil
 }
 
 func (r *CustomerRepository) executor(ctx context.Context) postgres.QueryExecuter {

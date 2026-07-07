@@ -36,16 +36,18 @@ func (r *CacheRepository) Set(ctx context.Context, key string, value any, ttl ti
 }
 
 func (r *CacheRepository) SetBatch(ctx context.Context, items map[string]any, ttl time.Duration) error {
+	const op = "repository.cache.SetBatch"
+
 	pipe := r.storage.Client.Pipeline()
 	for key, value := range items {
 		data, err := json.Marshal(value)
 		if err != nil {
-			return fmt.Errorf("cache.SetBatch marshal key=%s: %w", key, err)
+			return fmt.Errorf("%s: key=%s: %w", op, key, err)
 		}
 		pipe.Set(ctx, key, data, ttl)
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
-		return fmt.Errorf("cache.SetBatch: %w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 	return nil
 }
@@ -55,7 +57,7 @@ func (r *CacheRepository) Get(ctx context.Context, key string, dest any) error {
 	data, err := r.storage.Client.Get(ctx, key).Bytes()
 	if err != nil {
 		if redis.IsNil(err) {
-			return fmt.Errorf("%s: cache miss: %w", op)
+			return fmt.Errorf("%s: cache miss: %w", op, err)
 		}
 		return fmt.Errorf("%s: %w", op, err)
 	}
@@ -88,8 +90,9 @@ func (r *CacheRepository) GetBatch(ctx context.Context, keys []string) (map[stri
 }
 
 func (r *CacheRepository) Delete(ctx context.Context, key string) error {
+	const op = "repository.cache.Delete"
 	if err := r.storage.Client.Del(ctx, key).Err(); err != nil {
-		return fmt.Errorf("cache.Delete: %w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 	return nil
 }
@@ -114,7 +117,9 @@ func (r *CacheRepository) Lock(ctx context.Context, key string, ttl time.Duratio
 			else
 				return 0
 			end`
-		_ = r.storage.Client.Eval(context.Background(), luaRelease, []string{lockKey}, lockValue).Err()
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = r.storage.Client.Eval(releaseCtx, luaRelease, []string{lockKey}, lockValue).Err()
 	}, nil
 }
 

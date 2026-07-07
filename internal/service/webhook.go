@@ -1,56 +1,69 @@
-// internal/service/webhook.go
 package service
 
 import (
-	"bytes"
-	"context"
-	"fmt"
-	"net/http"
-	"time"
-
 	"bill-stripe-sim/internal/entity"
 	"bill-stripe-sim/pkg/logger"
+	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
 
-// WebhookDeliveryService — движок доставки вебхуков пользователю.
+type WebhookEndpointRepository interface {
+	GetActiveByCustomerID(ctx context.Context, customerID uuid.UUID) ([]*entity.WebhookEndpoint, error)
+}
+
+type WebhookLogRepository interface {
+	Create(ctx context.Context, wl *entity.WebhookLog) error
+	Update(ctx context.Context, wl *entity.WebhookLog) error
+}
+
+type EventRepository interface {
+	Create(ctx context.Context, e *entity.Event) error
+}
+
+type WebhookSender interface {
+	Send(ctx context.Context, url string, payload []byte, signature string, timestamp int64) (int, error)
+}
+
 type WebhookDeliveryService struct {
-	endpoints WebhookEndpointRepository // найти, куда слать
-	logs      WebhookLogRepository      // записать попытку
-	events    EventRepository           // audit log
-	publisher EventPublisher            // Kafka DLQ после max retries
-	client    HTTPClient                // абстракция над http.Client
-	clock     TimeProvider              // VirtualClock для timestamp подписи
+	endpoints WebhookEndpointRepository
+	logs      WebhookLogRepository
+	events    EventRepository
+	sender    WebhookSender // ← HTTP вынесен в transport layer
+	clock     TimeProvider
 	log       logger.Logger
-
-	cfg WebhookConfig
 }
 
-type WebhookConfig struct {
-	MaxRetries     int           // 5
-	InitialBackoff time.Duration // 1s
-	MaxBackoff     time.Duration // 5min
-	RequestTimeout time.Duration // 10s
-	DLQTopic       string        // "billing.dlq.webhooks"
+func NewWebhookDeliveryService(
+	endpoints WebhookEndpointRepository,
+	logs WebhookLogRepository,
+	events EventRepository,
+	sender WebhookSender,
+	clock TimeProvider,
+	log logger.Logger,
+) *WebhookDeliveryService {
+	return &WebhookDeliveryService{
+		endpoints: endpoints,
+		logs:      logs,
+		events:    events,
+		sender:    sender,
+		clock:     clock,
+		log:       log,
+	}
 }
 
-// Deliver — главная точка входа. Вызывается из NotificationService.
-// Асинхронна: не блокирует вызывающий код.
-func (s *WebhookDeliveryService) Deliver(ctx context.Context, customerID uuid.UUID, eventType entity.EventType, payload []byte) error {
-	// 1. Найти активные endpoints для customer
+func (s *WebhookDeliveryService) Deliver(ctx context.Context, customerID uuid.UUID, eventType string, payload []byte) error {
 	endpoints, err := s.endpoints.GetActiveByCustomerID(ctx, customerID)
 	if err != nil {
 		return err
 	}
 	if len(endpoints) == 0 {
-		return nil // у customer нет webhook endpoints — ОК
+		return nil
 	}
 
-	// 2. Создать trace_id для этой доставки
 	traceID := uuid.New()
 
-	// 3. Для каждого endpoint — отправить асинхронно
 	for _, ep := range endpoints {
 		go s.deliverToEndpoint(context.Background(), ep, traceID, eventType, payload)
 	}
@@ -58,26 +71,28 @@ func (s *WebhookDeliveryService) Deliver(ctx context.Context, customerID uuid.UU
 	return nil
 }
 
-// deliverToEndpoint — отправка одному endpoint с retry.
 func (s *WebhookDeliveryService) deliverToEndpoint(
 	ctx context.Context,
 	ep *entity.WebhookEndpoint,
 	traceID uuid.UUID,
-	eventType entity.EventType,
+	eventType string,
 	payload []byte,
 ) {
-	// Подписать payload
 	timestamp := s.clock.Now().Unix()
 	signature := ep.SignPayload(payload, timestamp)
 
-	backoff := s.cfg.InitialBackoff
+	// Константы вместо конфига
+	const maxRetries = 5
+	const initialBackoff = 1 * time.Second
+	const maxBackoff = 5 * time.Minute
 
-	for attempt := 1; attempt <= s.cfg.MaxRetries; attempt++ {
-		// Записать попытку в webhook_logs
+	backoff := initialBackoff
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
 		logEntry := &entity.WebhookLog{
 			ID:        uuid.New(),
 			TraceID:   traceID,
-			EventType: string(eventType),
+			EventType: eventType,
 			Payload:   payload,
 			TargetURL: ep.URL,
 			Status:    entity.WebhookStatusPending,
@@ -86,16 +101,13 @@ func (s *WebhookDeliveryService) deliverToEndpoint(
 		}
 		_ = s.logs.Create(ctx, logEntry)
 
-		// Отправить HTTP POST
-		statusCode, err := s.sendHTTP(ctx, ep.URL, payload, signature, timestamp)
+		statusCode, err := s.sender.Send(ctx, ep.URL, payload, signature, timestamp)
 
 		if err == nil && statusCode >= 200 && statusCode < 300 {
-			// Успех
 			logEntry.Status = entity.WebhookStatusDelivered
 			logEntry.ResponseCode = &statusCode
 			_ = s.logs.Update(ctx, logEntry)
 
-			// Audit event
 			event, _ := entity.NewEvent(entity.EventWebhookDelivered, map[string]any{
 				"webhook_log_id": logEntry.ID,
 				"target_url":     ep.URL,
@@ -105,7 +117,6 @@ func (s *WebhookDeliveryService) deliverToEndpoint(
 			return
 		}
 
-		// Неудача — обновить лог
 		errMsg := "request failed"
 		if err != nil {
 			errMsg = err.Error()
@@ -117,61 +128,11 @@ func (s *WebhookDeliveryService) deliverToEndpoint(
 		logEntry.ErrorMessage = &errMsg
 		_ = s.logs.Update(ctx, logEntry)
 
-		// Если это последняя попытка — в DLQ
-		if attempt == s.cfg.MaxRetries {
-			_ = s.publisher.Publish(ctx, s.cfg.DLQTopic, payload, map[string]any{
-				"trace_id":   traceID,
-				"endpoint":   ep.URL,
-				"event_type": eventType,
-				"attempts":   attempt,
-				"error":      errMsg,
-			})
+		if attempt == maxRetries {
 			return
 		}
 
-		// Ждём backoff
 		time.Sleep(backoff)
-		backoff = min(backoff*2, s.cfg.MaxBackoff)
+		backoff = min(backoff*2, maxBackoff)
 	}
-}
-
-func (s *WebhookDeliveryService) sendHTTP(
-	ctx context.Context,
-	url string,
-	payload []byte,
-	signature string,
-	timestamp int64,
-) (int, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.cfg.RequestTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-	if err != nil {
-		return 0, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Simulator-Signature", fmt.Sprintf("t=%d,v1=%s", timestamp, signature))
-	req.Header.Set("User-Agent", "BillingStripeSim/1.0")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	return resp.StatusCode, nil
-}
-
-func (s *WebhookDeliveryService) QueueWebhook(ctx context.Context, ep *entity.WebhookEndpoint, payload []byte) {
-	// Создаем контекст, который не умрет после завершения HTTP-ответа
-	detachedCtx := context.WithoutCancel(ctx)
-
-	// Добавляем жесткий таймаут непосредственно на операцию сетевой доставки
-	deliveryCtx, cancel := context.WithTimeout(detachedCtx, 30*time.Second)
-
-	go func() {
-		defer cancel()
-		s.deliverToEndpoint(deliveryCtx, ep, traceID, eventType, payload)
-	}()
 }

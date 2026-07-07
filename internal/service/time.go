@@ -14,7 +14,7 @@ import (
 
 type (
 	RenewalProcessor interface {
-		ProcessRenewal(ctx context.Context, subID uuid.UUID) error
+		RenewSubscription(ctx context.Context, subID uuid.UUID) (*entity.Invoice, error) // ← Новое имя
 	}
 
 	SubscriptionProvider interface {
@@ -58,7 +58,10 @@ func (s *TimeService) GetCurrentTime() time.Time {
 
 func (s *TimeService) AdvanceTime(ctx context.Context, d time.Duration) error {
 	const op = "service.time.AdvanceTime"
-	s.clock.Advance(d)
+
+	if err := s.clock.Advance(d); err != nil {
+		return fmt.Errorf("%s: advance clock: %w", op, err)
+	}
 
 	s.log.LogAttrs(ctx, logger.InfoLevel, "time advanced",
 		logger.String("duration", d.String()),
@@ -111,7 +114,7 @@ func (s *TimeService) processSingleSubscription(ctx context.Context, sub *entity
 	}
 	defer unlock()
 
-	if err := s.processor.ProcessRenewal(ctx, sub.ID); err != nil {
+	if _, err := s.processor.RenewSubscription(ctx, sub.ID); err != nil { // ← Новое имя
 		s.log.LogAttrs(ctx, logger.ErrorLevel, "failed to renew subscription",
 			logger.String("sub_id", sub.ID.String()),
 			logger.String("error", err.Error()),

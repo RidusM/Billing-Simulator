@@ -1,59 +1,91 @@
-// internal/service/notification.go
 package service
 
 import (
 	"bill-stripe-sim/internal/entity"
+	"bill-stripe-sim/pkg/logger"
 	"context"
-	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 )
 
 type EventSender interface {
-	SendInvoiceEvent(ctx context.Context, event *InvoiceEvent) error
-	SendSubscriptionEvent(ctx context.Context, event *SubscriptionEvent) error
+	Send(ctx context.Context, topic string, payload []byte, headers map[string]string) error
 }
 
 type WebhookDispatcher interface {
-	Deliver(ctx context.Context, customerID uuid.UUID, eventType entity.EventType, payload []byte) error
+	Deliver(ctx context.Context, customerID uuid.UUID, eventType string, payload []byte) error
 }
 
 type NotificationService struct {
-	sender  EventSender       // Kafka (внутренние события)
-	webhook WebhookDispatcher // HTTP (доставка пользователю)
+	sender  EventSender
+	webhook WebhookDispatcher
+	log     logger.Logger
 }
 
-func NewNotificationService(sender EventSender, webhook WebhookDispatcher) *NotificationService {
+func NewNotificationService(
+	sender EventSender,
+	webhook WebhookDispatcher,
+	log logger.Logger,
+) *NotificationService {
 	return &NotificationService{
 		sender:  sender,
 		webhook: webhook,
+		log:     log,
 	}
 }
 
-func (s *NotificationService) NotifyInvoiceCreated(ctx context.Context, inv *entity.Invoice) error {
-	event := mapInvoiceToEvent(inv)
+// HandleDomainEvent — принимает УЖЕ СЕРИАЛИЗОВАННЫЙ payload
+func (s *NotificationService) HandleDomainEvent(
+	ctx context.Context,
+	eventType string,
+	customerID uuid.UUID,
+	payload []byte,
+) error {
+	switch eventType {
+	case "customer.created":
+		return s.handleEvent(ctx, customerID, entity.EventCustomerCreated, payload)
 
-	// 1. Внутреннее событие в Kafka
-	if err := s.sender.SendInvoiceEvent(ctx, event); err != nil {
-		return err
+	case "subscription.created":
+		return s.handleEvent(ctx, customerID, entity.EventSubscriptionCreated, payload)
+
+	case "subscription.canceled":
+		return s.handleEvent(ctx, customerID, entity.EventSubscriptionCanceled, payload)
+
+	case "subscription.renewed":
+		return s.handleEvent(ctx, customerID, entity.EventSubscriptionRenewed, payload)
+
+	case "invoice.created":
+		return s.handleEvent(ctx, customerID, entity.EventInvoiceCreated, payload)
+
+	case "invoice.paid":
+		return s.handleEvent(ctx, customerID, entity.EventInvoicePaid, payload)
+
+	case "invoice.payment_failed":
+		return s.handleEvent(ctx, customerID, entity.EventInvoiceFailed, payload)
+
+	default:
+		s.log.Warn("unknown domain event type", "event_type", eventType)
+		return nil
 	}
-
-	// 2. HTTP-доставка пользователю (асинхронно внутри Deliver)
-	payload, _ := json.Marshal(event)
-	_ = s.webhook.Deliver(ctx, inv.CustomerID, entity.EventInvoiceCreated, payload)
-
-	return nil
 }
 
-func (s *NotificationService) NotifySubscriptionUpdated(ctx context.Context, sub *entity.Subscription) error {
-	event := mapSubscriptionToEvent(sub)
-
-	if err := s.sender.SendSubscriptionEvent(ctx, event); err != nil {
-		return err
+// handleEvent — универсальный обработчик
+func (s *NotificationService) handleEvent(
+	ctx context.Context,
+	customerID uuid.UUID,
+	eventType entity.EventType,
+	payload []byte,
+) error {
+	// Отправляем в Kafka
+	topic := fmt.Sprintf("billing.%s", eventType)
+	if err := s.sender.Send(ctx, topic, payload, nil); err != nil {
+		s.log.Error("failed to send event to Kafka",
+			"event_type", eventType,
+			"error", err,
+		)
 	}
 
-	payload, _ := json.Marshal(event)
-	_ = s.webhook.Deliver(ctx, sub.CustomerID, entity.EventSubscriptionRenewed, payload)
-
-	return nil
+	// Отправляем webhook
+	return s.webhook.Deliver(ctx, customerID, string(eventType), payload)
 }

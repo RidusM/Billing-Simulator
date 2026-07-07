@@ -1,6 +1,10 @@
 package entity
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type BillingInterval string
 
@@ -12,19 +16,41 @@ const (
 )
 
 type Price struct {
-	ID            string
+	ID            uuid.UUID
+	PublicID      string
+	ProductID     uuid.UUID
 	Amount        int64
 	Currency      string
 	Interval      BillingInterval
 	IntervalCount int
+	Active        bool
+	Metadata      map[string]string
+	DeletedAt     *time.Time
 	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func NewPrice(productID uuid.UUID, amount int64, currency string, interval BillingInterval, intervalCount int, now time.Time) *Price {
+	if intervalCount <= 0 {
+		intervalCount = 1
+	}
+	return &Price{
+		ID:            uuid.New(),
+		PublicID:      GeneratePublicID("price"),
+		ProductID:     productID,
+		Amount:        amount,
+		Currency:      currency,
+		Interval:      interval,
+		IntervalCount: intervalCount,
+		Active:        true,
+		Metadata:      make(map[string]string),
+		CreatedAt:     now.UTC(),
+		UpdatedAt:     now.UTC(),
+	}
 }
 
 func (p *Price) NextBillingDate(from time.Time) time.Time {
 	count := p.IntervalCount
-	if count <= 0 {
-		count = 1
-	}
 	switch p.Interval {
 	case BillingIntervalDay:
 		return from.AddDate(0, 0, count)

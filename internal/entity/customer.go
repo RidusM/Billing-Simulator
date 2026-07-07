@@ -1,8 +1,6 @@
 package entity
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,20 +10,42 @@ type Customer struct {
 	ID        uuid.UUID
 	PublicID  string
 	Email     string
+	Name      string
+	Phone     string
+	Metadata  map[string]string
+	DeletedAt *time.Time
 	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	domainEvents DomainEvents
 }
 
-func NewCustomer(email string, now time.Time) *Customer {
-	return &Customer{
-		ID:        uuid.New(),
-		PublicID:  generatePublicID("cus"),
-		Email:     email,
-		CreatedAt: now.UTC(),
+func NewCustomer(email, name string, now time.Time) *Customer {
+	c := &Customer{
+		ID:           uuid.New(),
+		PublicID:     GeneratePublicID("cus"),
+		Email:        email,
+		Name:         name,
+		Metadata:     make(map[string]string),
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		domainEvents: make(DomainEvents, 0),
 	}
+
+	// Заполняем событие ПОЛНОЙ информацией
+	c.domainEvents = append(c.domainEvents, CustomerCreatedEvent{
+		CustomerID:    c.ID,
+		CustomerPubID: c.PublicID,
+		Email:         c.Email,
+		Name:          c.Name,
+		CreatedAt:     now,
+	})
+
+	return c
 }
 
-func generatePublicID(prefix string) string {
-	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-	return prefix + "_" + hex.EncodeToString(b)
+func (c *Customer) GetAndClearEvents() DomainEvents {
+	events := c.domainEvents
+	c.domainEvents = nil
+	return events
 }

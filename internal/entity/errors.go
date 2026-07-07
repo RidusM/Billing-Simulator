@@ -10,12 +10,20 @@ var (
 
 	ErrCustomerNotFound = errors.New("customer not found")
 
-	ErrSubscriptionNotFound = errors.New("subscription not found")
+	ErrProductNotFound = errors.New("product not found")
+	ErrPriceNotFound   = errors.New("price not found")
+	ErrInvalidPrice    = errors.New("invalid price id")
+
+	ErrSubscriptionNotFound        = errors.New("subscription not found")
 	ErrSubscriptionAlreadyCanceled = errors.New("subscription is already canceled")
 	ErrSubscriptionNotActive       = errors.New("subscription is not active")
-	ErrInvalidPrice         = errors.New("invalid price id")
 
 	ErrInvoiceNotFound    = errors.New("invoice not found")
 	ErrInvoiceAlreadyPaid = errors.New("invoice is already paid")
 	ErrInvoiceNotPayable  = errors.New("invoice is not in a payable state")
+
+	ErrPaymentIntentNotFound = errors.New("payment intent not found")
+
+	ErrWebhookEndpointNotFound = errors.New("webhook endpoint not found")
+	ErrWebhookEndpointDisabled = errors.New("webhook endpoint is disabled")
 )

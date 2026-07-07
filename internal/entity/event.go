@@ -17,15 +17,17 @@ const (
 	EventInvoiceCreated       EventType = "invoice.created"
 	EventInvoicePaid          EventType = "invoice.paid"
 	EventInvoiceFailed        EventType = "invoice.payment_failed"
-	EventWebhookDelivered     EventType = "webhook.delivered"
-	EventWebhookFailed        EventType = "webhook.failed"
+	EventPaymentIntentFailed  EventType = "payment_intent.payment_failed"
 )
 
 type Event struct {
-	ID        uuid.UUID
-	Type      EventType
-	Payload   json.RawMessage
-	CreatedAt time.Time
+	ID             uuid.UUID
+	PublicID       string
+	Type           EventType
+	APIVersion     string
+	Payload        json.RawMessage
+	IdempotencyKey string
+	CreatedAt      time.Time
 }
 
 func NewEvent(eventType EventType, payload any, now time.Time) (*Event, error) {
@@ -34,9 +36,11 @@ func NewEvent(eventType EventType, payload any, now time.Time) (*Event, error) {
 		return nil, err
 	}
 	return &Event{
-		ID:        uuid.New(),
-		Type:      eventType,
-		Payload:   data,
-		CreatedAt: now.UTC(),
+		ID:         uuid.New(),
+		PublicID:   GeneratePublicID("evt"),
+		Type:       eventType,
+		APIVersion: "2024-01-01",
+		Payload:    data,
+		CreatedAt:  now.UTC(),
 	}, nil
 }
