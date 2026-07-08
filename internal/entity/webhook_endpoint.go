@@ -26,11 +26,11 @@ type WebhookEndpoint struct {
 	UpdatedAt       time.Time
 }
 
-func NewWebhookEndpoint(customerID uuid.UUID, url, secretPrefix, secret string) *WebhookEndpoint {
-	now := time.Now().UTC()
+func NewWebhookEndpoint(customerID uuid.UUID, now time.Time, url, secretPrefix, secret string) *WebhookEndpoint {
+	pubID, _ := GeneratePublicID("we")
 	return &WebhookEndpoint{
 		ID:            uuid.New(),
-		PublicID:      GeneratePublicID("we"),
+		PublicID:      pubID,
 		CustomerID:    customerID,
 		URL:           url,
 		SecretPrefix:  secretPrefix,

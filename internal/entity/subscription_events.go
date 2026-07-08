@@ -22,6 +22,7 @@ type SubscriptionCreatedEvent struct {
 func (e SubscriptionCreatedEvent) EventType() string      { return "subscription.created" }
 func (e SubscriptionCreatedEvent) OccurredOn() time.Time  { return e.CreatedAt }
 func (e SubscriptionCreatedEvent) AggregateID() uuid.UUID { return e.SubscriptionID }
+func (e SubscriptionCreatedEvent) AggregateType() string  { return "subscription" }
 
 // SubscriptionCanceledEvent
 type SubscriptionCanceledEvent struct {
@@ -37,6 +38,7 @@ type SubscriptionCanceledEvent struct {
 func (e SubscriptionCanceledEvent) EventType() string      { return "subscription.canceled" }
 func (e SubscriptionCanceledEvent) OccurredOn() time.Time  { return e.CanceledAt }
 func (e SubscriptionCanceledEvent) AggregateID() uuid.UUID { return e.SubscriptionID }
+func (e SubscriptionCanceledEvent) AggregateType() string  { return "subscription" }
 
 // SubscriptionRenewedEvent
 type SubscriptionRenewedEvent struct {
@@ -56,3 +58,4 @@ type SubscriptionRenewedEvent struct {
 func (e SubscriptionRenewedEvent) EventType() string      { return "subscription.renewed" }
 func (e SubscriptionRenewedEvent) OccurredOn() time.Time  { return e.RenewedAt }
 func (e SubscriptionRenewedEvent) AggregateID() uuid.UUID { return e.SubscriptionID }
+func (e SubscriptionRenewedEvent) AggregateType() string  { return "subscription" }

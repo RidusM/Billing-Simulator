@@ -1,8 +1,9 @@
 CREATE TABLE outbox_events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     
     event_type VARCHAR(64) NOT NULL,
     aggregate_id UUID NOT NULL,
+    aggregate_type VARCHAR(64) NOT NULL,
     payload JSONB NOT NULL,
     
     occurred_at TIMESTAMPTZ NOT NULL,
@@ -28,3 +29,6 @@ CREATE INDEX idx_outbox_events_event_type
 
 CREATE INDEX idx_outbox_events_aggregate_id 
     ON outbox_events(aggregate_id);
+
+CREATE INDEX idx_outbox_events_aggregate_type_id
+    ON outbox_events(aggregate_type, aggregate_id)

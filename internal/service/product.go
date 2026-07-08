@@ -23,14 +23,14 @@ type ProductService struct {
 	products ProductRepository // ← Локальный интерфейс!
 	tm       TransactionManager
 	log      logger.Logger
-	clock    TimeProvider
+	clock    VirtualClock
 }
 
 func NewProductService(
 	products ProductRepository, // ← Локальный интерфейс!
 	tm TransactionManager,
 	log logger.Logger,
-	clock TimeProvider,
+	clock VirtualClock,
 ) *ProductService {
 	return &ProductService{
 		products: products,

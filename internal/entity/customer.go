@@ -21,9 +21,10 @@ type Customer struct {
 }
 
 func NewCustomer(email, name string, now time.Time) *Customer {
+	pubID, _ := GeneratePublicID("cus")
 	c := &Customer{
 		ID:           uuid.New(),
-		PublicID:     GeneratePublicID("cus"),
+		PublicID:     pubID,
 		Email:        email,
 		Name:         name,
 		Metadata:     make(map[string]string),

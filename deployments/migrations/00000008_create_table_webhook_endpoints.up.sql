@@ -1,5 +1,5 @@
 CREATE TABLE webhook_endpoints (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     public_id VARCHAR(64) UNIQUE NOT NULL,
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     
@@ -14,7 +14,7 @@ CREATE TABLE webhook_endpoints (
     enabled BOOLEAN NOT NULL DEFAULT true,
     deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ
 );
 
 CREATE INDEX idx_webhook_endpoints_customer_id ON webhook_endpoints(customer_id) WHERE deleted_at IS NULL;

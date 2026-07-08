@@ -9,7 +9,7 @@ CREATE TYPE payment_intent_status AS ENUM (
 );
 
 CREATE TABLE payment_intents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     public_id VARCHAR(64) UNIQUE NOT NULL,         -- pi_xxx
     invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL,
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
@@ -27,7 +27,7 @@ CREATE TABLE payment_intents (
     metadata JSONB NOT NULL DEFAULT '{}',
     deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ,
     
     CONSTRAINT chk_pi_amount_positive CHECK (amount > 0)
 );

@@ -23,6 +23,7 @@ type InvoiceCreatedEvent struct {
 func (e InvoiceCreatedEvent) EventType() string      { return "invoice.created" }
 func (e InvoiceCreatedEvent) OccurredOn() time.Time  { return e.CreatedAt }
 func (e InvoiceCreatedEvent) AggregateID() uuid.UUID { return e.InvoiceID }
+func (e InvoiceCreatedEvent) AggregateType() string  { return "invoice" }
 
 // InvoicePaidEvent
 type InvoicePaidEvent struct {
@@ -39,6 +40,7 @@ type InvoicePaidEvent struct {
 func (e InvoicePaidEvent) EventType() string      { return "invoice.paid" }
 func (e InvoicePaidEvent) OccurredOn() time.Time  { return e.PaidAt }
 func (e InvoicePaidEvent) AggregateID() uuid.UUID { return e.InvoiceID }
+func (e InvoicePaidEvent) AggregateType() string  { return "invoice" }
 
 // InvoicePaymentFailedEvent
 type InvoicePaymentFailedEvent struct {
@@ -56,3 +58,4 @@ type InvoicePaymentFailedEvent struct {
 func (e InvoicePaymentFailedEvent) EventType() string      { return "invoice.payment_failed" }
 func (e InvoicePaymentFailedEvent) OccurredOn() time.Time  { return e.FailedAt }
 func (e InvoicePaymentFailedEvent) AggregateID() uuid.UUID { return e.InvoiceID }
+func (e InvoicePaymentFailedEvent) AggregateType() string  { return "invoice" }

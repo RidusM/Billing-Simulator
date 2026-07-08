@@ -24,7 +24,7 @@ type PaymentService struct {
 	dispatcher     *EventDispatcher // ← ДОБАВЛЕНО
 	tm             TransactionManager
 	log            logger.Logger
-	clock          TimeProvider
+	clock          VirtualClock
 }
 
 func NewPaymentService(
@@ -33,7 +33,7 @@ func NewPaymentService(
 	dispatcher *EventDispatcher, // ← ДОБАВЛЕНО
 	tm TransactionManager,
 	log logger.Logger,
-	clock TimeProvider,
+	clock VirtualClock,
 ) *PaymentService {
 	return &PaymentService{
 		paymentIntents: paymentIntents,

@@ -1,5 +1,5 @@
 CREATE TABLE events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     public_id VARCHAR(64) UNIQUE NOT NULL,
     event_type VARCHAR(64) NOT NULL,
     api_version VARCHAR(32) NOT NULL DEFAULT '2024-01-01',
@@ -10,4 +10,4 @@ CREATE TABLE events (
 
 CREATE INDEX idx_events_event_type ON events(event_type);
 CREATE INDEX idx_events_created_at ON events(created_at DESC);
-CREATE INDEX idx_events_idempotency ON events(idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX idx_events_idempotency ON events(idempotency_key) WHERE idempotency_key IS NOT NULL;

@@ -26,6 +26,9 @@ func NewEventRepository(storage *postgres.Postgres) *EventRepository {
 
 func (r *EventRepository) Create(ctx context.Context, e *entity.Event) error {
 	const op = "repository.event.Create"
+
+	// e.IdempotencyKey — это *string. Передаем его напрямую в драйвер.
+	// Если он nil, pgx сам запишет SQL NULL. Пустую строку ловить не нужно.
 	sql, args, err := r.storage.Builder.
 		Insert("events").
 		Columns("id", "public_id", "event_type", "api_version", "payload", "idempotency_key", "created_at").
@@ -54,6 +57,8 @@ func (r *EventRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Ev
 	}
 
 	var e entity.Event
+
+	// Сканируем напрямую в поле e.IdempotencyKey, так как оно уже имеет тип *string
 	err = r.executor(ctx).QueryRow(ctx, sql, args...).Scan(
 		&e.ID,
 		&e.PublicID,
@@ -69,6 +74,7 @@ func (r *EventRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Ev
 		}
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
+
 	return &e, nil
 }
 
@@ -95,18 +101,20 @@ func (r *EventRepository) GetByType(ctx context.Context, eventType entity.EventT
 	var events []*entity.Event
 	for rows.Next() {
 		var e entity.Event
+
 		err = rows.Scan(
 			&e.ID,
 			&e.PublicID,
 			&e.Type,
 			&e.APIVersion,
 			&e.Payload,
-			&e.IdempotencyKey,
+			&e.IdempotencyKey, // Сканируем напрямую в указатель внутри структуры
 			&e.CreatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", op, err)
 		}
+
 		events = append(events, &e)
 	}
 	return events, nil
@@ -134,18 +142,20 @@ func (r *EventRepository) GetRecent(ctx context.Context, limit, offset int) ([]*
 	var events []*entity.Event
 	for rows.Next() {
 		var e entity.Event
+
 		err = rows.Scan(
 			&e.ID,
 			&e.PublicID,
 			&e.Type,
 			&e.APIVersion,
 			&e.Payload,
-			&e.IdempotencyKey,
+			&e.IdempotencyKey, // Сканируем напрямую в указатель внутри структуры
 			&e.CreatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", op, err)
 		}
+
 		events = append(events, &e)
 	}
 	return events, nil

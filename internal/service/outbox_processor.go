@@ -12,24 +12,20 @@ import (
 	"github.com/google/uuid"
 )
 
-type OutboxRepository interface {
+type OutboxPoller interface {
 	GetUnprocessed(ctx context.Context, limit int, olderThan time.Duration) ([]*entity.OutboxEvent, error)
 	MarkProcessed(ctx context.Context, id uuid.UUID) error
 	MarkFailed(ctx context.Context, id uuid.UUID, errorMsg string) error
 	DeleteOldProcessed(ctx context.Context, olderThan time.Duration) (int64, error)
 }
 
-// OutboxProcessor — фоновый процессор outbox событий
 type OutboxProcessor struct {
-	outbox       OutboxRepository
+	outbox       OutboxPoller
 	notification *NotificationService
 	log          logger.Logger
-
-	cfg OutboxProcessorConfig
-
-	// Для graceful shutdown
-	wg   sync.WaitGroup
-	done chan struct{}
+	cfg          OutboxProcessorConfig
+	wg           sync.WaitGroup
+	done         chan struct{}
 }
 
 type OutboxProcessorConfig struct {
@@ -55,7 +51,7 @@ func DefaultOutboxProcessorConfig() OutboxProcessorConfig {
 }
 
 func NewOutboxProcessor(
-	outbox OutboxRepository,
+	outbox OutboxPoller,
 	notification *NotificationService,
 	log logger.Logger,
 	cfg OutboxProcessorConfig,

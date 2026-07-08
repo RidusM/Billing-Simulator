@@ -23,14 +23,14 @@ type PriceService struct {
 	prices PriceRepository // ← Локальный интерфейс!
 	tm     TransactionManager
 	log    logger.Logger
-	clock  TimeProvider
+	clock  VirtualClock
 }
 
 func NewPriceService(
 	prices PriceRepository, // ← Локальный интерфейс!
 	tm TransactionManager,
 	log logger.Logger,
-	clock TimeProvider,
+	clock VirtualClock,
 ) *PriceService {
 	return &PriceService{
 		prices: prices,

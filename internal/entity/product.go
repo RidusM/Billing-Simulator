@@ -19,9 +19,10 @@ type Product struct {
 }
 
 func NewProduct(name, description string, now time.Time) *Product {
+	pubID, _ := GeneratePublicID("prod")
 	return &Product{
 		ID:          uuid.New(),
-		PublicID:    GeneratePublicID("prod"),
+		PublicID:    pubID,
 		Name:        name,
 		Description: description,
 		Active:      true,

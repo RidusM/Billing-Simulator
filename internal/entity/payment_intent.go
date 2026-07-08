@@ -13,6 +13,7 @@ const (
 	PaymentIntentStatusRequiresPaymentMethod PaymentIntentStatus = "requires_payment_method"
 	PaymentIntentStatusRequiresConfirmation  PaymentIntentStatus = "requires_confirmation"
 	PaymentIntentStatusRequiresAction        PaymentIntentStatus = "requires_action"
+	PaymentIntentStatusRequiresCapture       PaymentIntentStatus = "requires_capture"
 	PaymentIntentStatusProcessing            PaymentIntentStatus = "processing"
 	PaymentIntentStatusSucceeded             PaymentIntentStatus = "succeeded"
 	PaymentIntentStatusCanceled              PaymentIntentStatus = "canceled"
@@ -37,9 +38,10 @@ type PaymentIntent struct {
 }
 
 func NewPaymentIntent(customerID uuid.UUID, invoiceID *uuid.UUID, amount int64, currency string, now time.Time) *PaymentIntent {
+	pubID, _ := GeneratePublicID("pi")
 	return &PaymentIntent{
 		ID:                uuid.New(),
-		PublicID:          GeneratePublicID("pi"),
+		PublicID:          pubID,
 		InvoiceID:         invoiceID,
 		CustomerID:        customerID,
 		Amount:            amount,
@@ -59,5 +61,11 @@ func (pi *PaymentIntent) MarkSucceeded() {
 
 func (pi *PaymentIntent) MarkFailed(errorCode, declineCode string) {
 	pi.Status = PaymentIntentStatusRequiresPaymentMethod
-	pi.LastPaymentError = []byte(`{"code":"` + errorCode + `","decline_code":"` + declineCode + `"}`)
+
+	bytes, _ := json.Marshal(map[string]string{
+		"code":         errorCode,
+		"decline_code": declineCode,
+	})
+
+	pi.LastPaymentError = bytes
 }

@@ -21,12 +21,8 @@ type (
 		Create(ctx context.Context, i *entity.Invoice) error
 	}
 
-	PriceRepository interface {
+	PriceReader interface {
 		GetByID(ctx context.Context, id uuid.UUID) (*entity.Price, error)
-	}
-
-	OutboxRepository interface {
-		SaveBatch(ctx context.Context, events []*entity.OutboxEvent) error
 	}
 
 	TransactionManager interface {
@@ -37,29 +33,26 @@ type (
 type BillingService struct {
 	subscriptions SubscriptionRepository
 	invoices      InvoiceRepository
-	price         PriceRepository
-	outbox        OutboxRepository
+	price         PriceReader
 	dispatcher    *EventDispatcher
 	tm            TransactionManager
 	log           logger.Logger
-	clock         TimeProvider
+	clock         VirtualClock
 }
 
 func NewBillingService(
 	subscriptions SubscriptionRepository,
 	invoices InvoiceRepository,
 	price PriceRepository,
-	outbox OutboxRepository,
 	dispatcher *EventDispatcher,
 	tm TransactionManager,
 	log logger.Logger,
-	clock TimeProvider,
+	clock VirtualClock,
 ) *BillingService {
 	return &BillingService{
 		subscriptions: subscriptions,
 		invoices:      invoices,
 		price:         price,
-		outbox:        outbox,
 		dispatcher:    dispatcher,
 		tm:            tm,
 		log:           log,
@@ -80,7 +73,7 @@ func (bs *BillingService) CreateSubscription(ctx context.Context, customerID uui
 		}
 
 		now := bs.clock.Now()
-		_, nextBilling := price.NextBillingDate(now)
+		nextBilling := price.NextBillingDate(now)
 
 		sub = entity.NewSubscription(customerID, price.ID, now, nextBilling, now)
 
@@ -88,15 +81,15 @@ func (bs *BillingService) CreateSubscription(ctx context.Context, customerID uui
 			return fmt.Errorf("create subscription: %w", err)
 		}
 
-		// Создаём первый инвойс
 		inv = entity.NewInvoice(customerID, &sub.ID, price.Amount, price.Currency, now)
-		inv.Status = entity.InvoiceStatusPaid // Первая оплата всегда успешна
+		if err := inv.MarkPaid(now); err != nil {
+			return fmt.Errorf("mark initial invoice paid: %w", err)
+		}
 
 		if err := bs.invoices.Create(ctx, inv); err != nil {
 			return fmt.Errorf("create initial invoice: %w", err)
 		}
 
-		// Сохраняем события
 		events := sub.GetAndClearEvents()
 		events = append(events, inv.GetAndClearEvents()...)
 
@@ -137,7 +130,6 @@ func (bs *BillingService) CancelSubscription(ctx context.Context, subID string, 
 			return fmt.Errorf("update subscription: %w", err)
 		}
 
-		// Сохраняем события
 		events := sub.GetAndClearEvents()
 		if events.HasEvents() {
 			if err := bs.dispatcher.Dispatch(ctx, events); err != nil {
@@ -184,29 +176,35 @@ func (bs *BillingService) RenewSubscription(ctx context.Context, subID uuid.UUID
 			return fmt.Errorf("renew subscription: %w", err)
 		}
 
-		// Симулируем платёж
-		inv.Status = simulatePayment()
+		simStatus := simulatePayment()
+
+		if simStatus == entity.InvoiceStatusPaid {
+			if err := inv.MarkPaid(now); err != nil {
+				return fmt.Errorf("mark paid: %w", err)
+			}
+			sub.MarkPaid(now)
+		} else {
+			isFinalAttempt := inv.AttemptCount >= 3
+
+			if isFinalAttempt {
+				sub.MarkCanceled(now)
+			} else {
+				sub.MarkPastDue(now)
+			}
+
+			if err := inv.MarkPaymentFailed(now, "card_declined", isFinalAttempt); err != nil {
+				return fmt.Errorf("mark payment failed: %w", err)
+			}
+		}
 
 		if err := bs.invoices.Create(ctx, inv); err != nil {
 			return fmt.Errorf("create renewal invoice: %w", err)
-		}
-
-		// ОБРАБОТКА FAILED PAYMENT
-		if inv.Status == entity.InvoiceStatusOpen {
-			// Платеж не прошел — помечаем подписку как past_due
-			sub.Status = entity.SubscriptionStatusPastDue
-
-			// Генерируем событие о неудачном платеже
-			if err := inv.MarkPaymentFailed(now, "card_declined"); err != nil {
-				return fmt.Errorf("mark payment failed: %w", err)
-			}
 		}
 
 		if err := bs.subscriptions.Update(ctx, sub); err != nil {
 			return fmt.Errorf("update subscription: %w", err)
 		}
 
-		// Сохраняем события
 		events := sub.GetAndClearEvents()
 		events = append(events, inv.GetAndClearEvents()...)
 

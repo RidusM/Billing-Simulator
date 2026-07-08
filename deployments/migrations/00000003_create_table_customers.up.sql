@@ -7,7 +7,7 @@ CREATE TABLE customers (
     metadata JSONB NOT NULL DEFAULT '{}',
     deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ
 );
 
 CREATE INDEX idx_customers_email ON customers(email) WHERE deleted_at IS NULL;

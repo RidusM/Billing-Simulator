@@ -194,7 +194,7 @@ func (r *WebhookLogRepository) MarkDelivered(ctx context.Context, id uuid.UUID, 
 	return nil
 }
 
-func (r *WebhookLogRepository) MarkFailed(ctx context.Context, id uuid.UUID, errorMessage string, nextAttemptAt time.Time) error {
+func (r *WebhookLogRepository) MarkFailed(ctx context.Context, id uuid.UUID, errorMessage string, nextAttemptAt time.Time, now time.Time) error {
 	const op = "repository.webhook_log.MarkFailed"
 	sql, args, err := r.storage.Builder.
 		Update("webhook_logs").
@@ -202,7 +202,7 @@ func (r *WebhookLogRepository) MarkFailed(ctx context.Context, id uuid.UUID, err
 		Set("error_message", errorMessage).
 		Set("next_attempt_at", nextAttemptAt).
 		Set("attempt", squirrel.Expr("attempt + 1")).
-		Set("updated_at", time.Now().UTC()).
+		Set("updated_at", now).
 		Where(squirrel.Eq{"id": id}).
 		ToSql()
 	if err != nil {

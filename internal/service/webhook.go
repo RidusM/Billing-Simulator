@@ -30,8 +30,8 @@ type WebhookDeliveryService struct {
 	endpoints WebhookEndpointRepository
 	logs      WebhookLogRepository
 	events    EventRepository
-	sender    WebhookSender // ← HTTP вынесен в transport layer
-	clock     TimeProvider
+	sender    WebhookSender
+	clock     VirtualClock
 	log       logger.Logger
 }
 
@@ -40,7 +40,7 @@ func NewWebhookDeliveryService(
 	logs WebhookLogRepository,
 	events EventRepository,
 	sender WebhookSender,
-	clock TimeProvider,
+	clock VirtualClock,
 	log logger.Logger,
 ) *WebhookDeliveryService {
 	return &WebhookDeliveryService{
@@ -64,8 +64,16 @@ func (s *WebhookDeliveryService) Deliver(ctx context.Context, customerID uuid.UU
 
 	traceID := uuid.New()
 
+	sem := make(chan struct{}, 10)
+
 	for _, ep := range endpoints {
-		go s.deliverToEndpoint(context.Background(), ep, traceID, eventType, payload)
+		sem <- struct{}{}
+
+		go func(endpoint *entity.WebhookEndpoint) {
+			defer func() { <-sem }()
+
+			s.deliverToEndpoint(context.WithoutCancel(ctx), endpoint, traceID, eventType, payload)
+		}(ep)
 	}
 
 	return nil
@@ -78,10 +86,10 @@ func (s *WebhookDeliveryService) deliverToEndpoint(
 	eventType string,
 	payload []byte,
 ) {
-	timestamp := s.clock.Now().Unix()
+	now := s.clock.Now()
+	timestamp := now.Unix()
 	signature := ep.SignPayload(payload, timestamp)
 
-	// Константы вместо конфига
 	const maxRetries = 5
 	const initialBackoff = 1 * time.Second
 	const maxBackoff = 5 * time.Minute
@@ -89,15 +97,20 @@ func (s *WebhookDeliveryService) deliverToEndpoint(
 	backoff := initialBackoff
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
+		currentNow := s.clock.Now()
+
 		logEntry := &entity.WebhookLog{
-			ID:        uuid.New(),
-			TraceID:   traceID,
-			EventType: eventType,
-			Payload:   payload,
-			TargetURL: ep.URL,
-			Status:    entity.WebhookStatusPending,
-			Attempt:   attempt,
-			CreatedAt: s.clock.Now(),
+			ID:         uuid.New(),
+			PublicID:   "wl_" + uuid.New().String()[:8],
+			EndpointID: ep.ID,
+			TraceID:    traceID,
+			EventType:  eventType,
+			Payload:    payload,
+			TargetURL:  ep.URL,
+			Status:     entity.WebhookStatusPending,
+			Attempt:    attempt,
+			CreatedAt:  currentNow,
+			UpdatedAt:  currentNow,
 		}
 		_ = s.logs.Create(ctx, logEntry)
 
@@ -106,13 +119,16 @@ func (s *WebhookDeliveryService) deliverToEndpoint(
 		if err == nil && statusCode >= 200 && statusCode < 300 {
 			logEntry.Status = entity.WebhookStatusDelivered
 			logEntry.ResponseCode = &statusCode
+			logEntry.UpdatedAt = s.clock.Now()
 			_ = s.logs.Update(ctx, logEntry)
 
-			event, _ := entity.NewEvent(entity.EventWebhookDelivered, map[string]any{
-				"webhook_log_id": logEntry.ID,
-				"target_url":     ep.URL,
-				"status_code":    statusCode,
-			})
+			event := &entity.Event{
+				ID:        uuid.New(),
+				PublicID:  "evt_" + uuid.New().String()[:8],
+				Type:      "webhook.delivered",
+				Payload:   payload,
+				CreatedAt: s.clock.Now(),
+			}
 			_ = s.events.Create(ctx, event)
 			return
 		}
@@ -126,6 +142,7 @@ func (s *WebhookDeliveryService) deliverToEndpoint(
 			logEntry.ResponseCode = &statusCode
 		}
 		logEntry.ErrorMessage = &errMsg
+		logEntry.UpdatedAt = s.clock.Now()
 		_ = s.logs.Update(ctx, logEntry)
 
 		if attempt == maxRetries {

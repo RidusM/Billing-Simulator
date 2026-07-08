@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,7 +33,7 @@ type Subscription struct {
 	TrialEnd            *time.Time
 	CanceledAt          *time.Time
 	CancelAtPeriodEnd   bool
-	CancellationDetails string
+	CancellationDetails json.RawMessage
 	Metadata            map[string]string
 	DeletedAt           *time.Time
 	CreatedAt           time.Time
@@ -42,9 +43,10 @@ type Subscription struct {
 }
 
 func NewSubscription(customerID, priceID uuid.UUID, periodStart, periodEnd time.Time, now time.Time) *Subscription {
+	pubID, _ := GeneratePublicID("sub")
 	return &Subscription{
 		ID:                 uuid.New(),
-		PublicID:           GeneratePublicID("sub"),
+		PublicID:           pubID,
 		CustomerID:         customerID,
 		PriceID:            priceID,
 		Status:             SubscriptionStatusActive,
@@ -58,20 +60,20 @@ func NewSubscription(customerID, priceID uuid.UUID, periodStart, periodEnd time.
 	}
 }
 
-// SetCustomerAndPriceInfo — заполняет публичные ID для событий (вызывается в сервисе)
-func (s *Subscription) SetCustomerAndPriceInfo(customerPublicID, pricePublicID string) {
-	s.CustomerPublicID = customerPublicID
-	s.PricePublicID = pricePublicID
-}
-
 func (s *Subscription) Renew(now time.Time, price *Price) (*Invoice, error) {
 	if s.Status != SubscriptionStatusActive && s.Status != SubscriptionStatusTrialing {
 		return nil, ErrSubscriptionNotActive
 	}
 
-	invoice := NewInvoice(s.CustomerID, &s.ID, price.Amount, price.Currency, now)
-	invoice.SetCustomerPublicID(s.CustomerPublicID)
-	invoice.SetSubscriptionPublicID(s.PublicID)
+	invoice := NewInvoice(
+		s.CustomerID,
+		s.CustomerPublicID,
+		&s.ID,
+		&s.PublicID,
+		price.Amount,
+		price.Currency,
+		now,
+	)
 
 	s.CurrentPeriodStart = s.CurrentPeriodEnd
 	s.CurrentPeriodEnd = price.NextBillingDate(s.CurrentPeriodEnd)
@@ -128,4 +130,20 @@ func (s *Subscription) GetAndClearEvents() DomainEvents {
 	events := s.domainEvents
 	s.domainEvents = nil
 	return events
+}
+
+func (s *Subscription) MarkPaid(now time.Time) {
+	s.Status = SubscriptionStatusActive
+	s.UpdatedAt = now
+}
+
+func (s *Subscription) MarkPastDue(now time.Time) {
+	s.Status = SubscriptionStatusPastDue
+	s.UpdatedAt = now
+}
+
+func (s *Subscription) MarkCanceled(now time.Time) {
+	s.Status = SubscriptionStatusCanceled
+	s.CanceledAt = &now
+	s.UpdatedAt = now
 }

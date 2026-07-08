@@ -168,35 +168,6 @@ func (r *SubscriptionRepository) UpdateNextBilling(ctx context.Context, id uuid.
 	return nil
 }
 
-func (r *SubscriptionRepository) Cancel(ctx context.Context, id uuid.UUID, canceledAt time.Time, atPeriodEnd bool) error {
-	const op = "repository.subscription.Cancel"
-
-	update := r.storage.Builder.Update("subscriptions").
-		Set("updated_at", canceledAt)
-
-	if atPeriodEnd {
-		update = update.Set("cancel_at_period_end", true)
-	} else {
-		update = update.
-			Set("status", entity.SubscriptionStatusCanceled).
-			Set("canceled_at", canceledAt)
-	}
-
-	sql, args, err := update.Where(squirrel.Eq{"id": id}).ToSql()
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-
-	tag, err := r.executor(ctx).Exec(ctx, sql, args...)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%s: %w", op, entity.ErrSubscriptionNotFound)
-	}
-	return nil
-}
-
 func (r *SubscriptionRepository) SoftDelete(ctx context.Context, id uuid.UUID) error {
 	const op = "repository.subscription.SoftDelete"
 

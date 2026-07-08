@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bill-stripe-sim/internal/clock"
 	"bill-stripe-sim/internal/entity"
 	"bill-stripe-sim/pkg/logger"
 	"context"
@@ -13,6 +12,16 @@ import (
 )
 
 type (
+	VirtualClock interface {
+		Now() time.Time
+		OnTimeJump(listener TimeJumpListener)
+		Advance(d time.Duration) error
+		SetTime(t time.Time)
+		Offset() time.Duration
+		Reset()
+		IsAhead()
+	}
+
 	RenewalProcessor interface {
 		RenewSubscription(ctx context.Context, subID uuid.UUID) (*entity.Invoice, error) // ← Новое имя
 	}
@@ -27,7 +36,7 @@ type (
 )
 
 type TimeService struct {
-	clock       *clock.VirtualClock
+	clock       VirtualClock
 	processor   RenewalProcessor
 	subs        SubscriptionProvider
 	cache       LockManager
@@ -36,7 +45,7 @@ type TimeService struct {
 }
 
 func NewTimeService(
-	cl *clock.VirtualClock,
+	cl VirtualClock,
 	processor RenewalProcessor,
 	subs SubscriptionProvider,
 	cache LockManager,

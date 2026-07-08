@@ -57,22 +57,30 @@ func (vc *VirtualClock) OnTimeJump(listener TimeJumpListener) {
 	vc.listeners = append(vc.listeners, listener)
 }
 
-func (vc *VirtualClock) Advance(d time.Duration) {
+func (vc *VirtualClock) Advance(d time.Duration) error {
 	vc.mu.Lock()
-
 	realNow := time.Now()
 	oldTime := realNow.Add(vc.offset)
 
 	vc.offset += d
-
 	newTime := realNow.Add(vc.offset)
-
-	listeners := vc.listeners
+	offset := vc.offset
 	vc.mu.Unlock()
 
-	for _, listener := range listeners {
-		go listener(oldTime, newTime)
+	// Сохраняем новое смещение в Redis
+	if vc.store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := vc.store.SaveOffset(ctx, offset); err != nil {
+			vc.logger.Error("failed to save clock offset to Redis in Advance", "error", err)
+			return fmt.Errorf("save offset: %w", err)
+		}
 	}
+
+	// Уведомляем асинхронно через существующий метод
+	vc.notifyListeners(oldTime, newTime)
+
+	return nil
 }
 
 func (vc *VirtualClock) SetTime(t time.Time) {
@@ -122,6 +130,7 @@ func (vc *VirtualClock) IsAhead() bool {
 func (vc *VirtualClock) notifyListeners(oldTime, newTime time.Time) {
 	vc.mu.RLock()
 	defer vc.mu.RUnlock()
+
 	for _, listener := range vc.listeners {
 		go listener(oldTime, newTime)
 	}

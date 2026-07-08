@@ -3,7 +3,7 @@ CREATE TYPE price_interval AS ENUM ('day', 'week', 'month', 'year');
 CREATE TABLE prices (
     id UUID PRIMARY KEY,
     public_id VARCHAR(64) UNIQUE,
-    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    product_id UUID NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
     amount BIGINT NOT NULL,
     currency CHAR(3) NOT NULL DEFAULT 'USD',
     interval price_interval NOT NULL,

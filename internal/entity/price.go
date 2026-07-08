@@ -31,12 +31,13 @@ type Price struct {
 }
 
 func NewPrice(productID uuid.UUID, amount int64, currency string, interval BillingInterval, intervalCount int, now time.Time) *Price {
+	pubID, _ := GeneratePublicID("price")
 	if intervalCount <= 0 {
 		intervalCount = 1
 	}
 	return &Price{
 		ID:            uuid.New(),
-		PublicID:      GeneratePublicID("price"),
+		PublicID:      pubID,
 		ProductID:     productID,
 		Amount:        amount,
 		Currency:      currency,

@@ -12,30 +12,23 @@ type CustomerRepository interface {
 	GetByPublicID(ctx context.Context, publicID string) (*entity.Customer, error)
 }
 
-type OutboxRepository interface {
-	SaveBatch(ctx context.Context, events []*entity.OutboxEvent) error
-}
-
 type CustomerService struct {
 	customers  CustomerRepository
-	outbox     OutboxRepository
 	dispatcher *EventDispatcher
 	tm         TransactionManager
 	log        logger.Logger
-	clock      TimeProvider
+	clock      VirtualClock
 }
 
 func NewCustomerService(
 	customers CustomerRepository,
-	outbox OutboxRepository,
 	dispatcher *EventDispatcher,
 	tm TransactionManager,
 	log logger.Logger,
-	clock TimeProvider,
+	clock VirtualClock,
 ) *CustomerService {
 	return &CustomerService{
 		customers:  customers,
-		outbox:     outbox,
 		dispatcher: dispatcher,
 		tm:         tm,
 		log:        log,

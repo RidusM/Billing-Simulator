@@ -69,6 +69,10 @@ func (r *CacheRepository) Get(ctx context.Context, key string, dest any) error {
 
 func (r *CacheRepository) GetBatch(ctx context.Context, keys []string) (map[string][]byte, error) {
 	const op = "repository.cache.GetBatch"
+	if len(keys) == 0 {
+		return make(map[string][]byte), nil
+	}
+
 	pipe := r.storage.Client.Pipeline()
 	cmds := make(map[string]*redis.StringCmd, len(keys))
 
@@ -76,15 +80,22 @@ func (r *CacheRepository) GetBatch(ctx context.Context, keys []string) (map[stri
 		cmds[key] = pipe.Get(ctx, key)
 	}
 
-	if _, err := pipe.Exec(ctx); err != nil && !redis.IsNil(err) {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
+	// Выполняем пайплайн. Ошибку здесь не возвращаем сразу,
+	// так как pipe.Exec возвращает ошибку, если ХОТЯ БЫ ОДИН ключ отсутствует (redis.Nil).
+	_, _ = pipe.Exec(ctx)
 
 	result := make(map[string][]byte, len(keys))
 	for key, cmd := range cmds {
-		if val, err := cmd.Result(); err == nil {
-			result[key] = []byte(val)
+		val, err := cmd.Result()
+		if err != nil {
+			// Если это просто промах по кэшу (cache miss) — игнорируем и идем дальше
+			if redis.IsNil(err) {
+				continue
+			}
+			// Если ошибка системная (таймаут, обрыв соединения) — это критический сбой
+			return nil, fmt.Errorf("%s: redis error for key %s: %w", op, key, err)
 		}
+		result[key] = []byte(val)
 	}
 	return result, nil
 }

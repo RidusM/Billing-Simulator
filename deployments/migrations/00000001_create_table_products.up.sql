@@ -7,7 +7,7 @@ CREATE TABLE products (
     metadata JSONB NOT NULL DEFAULT '{}',
     deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ
 );
 
 CREATE INDEX idx_products_active ON products(active) WHERE active = true AND deleted_at IS NULL;

@@ -9,6 +9,7 @@ import (
 
 type EventType string
 
+// TODO: ИЗМЕНИТЬ!!!!!!!!!
 const (
 	EventCustomerCreated      EventType = "customer.created"
 	EventSubscriptionCreated  EventType = "subscription.created"
@@ -26,18 +27,20 @@ type Event struct {
 	Type           EventType
 	APIVersion     string
 	Payload        json.RawMessage
-	IdempotencyKey string
+	IdempotencyKey *string
 	CreatedAt      time.Time
 }
 
 func NewEvent(eventType EventType, payload any, now time.Time) (*Event, error) {
+	pubID, _ := GeneratePublicID("evt")
+
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
 	return &Event{
 		ID:         uuid.New(),
-		PublicID:   GeneratePublicID("evt"),
+		PublicID:   pubID,
 		Type:       eventType,
 		APIVersion: "2024-01-01",
 		Payload:    data,

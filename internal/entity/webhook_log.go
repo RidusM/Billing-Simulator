@@ -37,9 +37,10 @@ type WebhookLog struct {
 }
 
 func NewWebhookLog(eventID, endpointID, traceID uuid.UUID, eventType string, payload json.RawMessage, targetURL string, now time.Time) *WebhookLog {
+	pubID, _ := GeneratePublicID("wh")
 	return &WebhookLog{
 		ID:            uuid.New(),
-		PublicID:      GeneratePublicID("wh"),
+		PublicID:      pubID,
 		EventID:       eventID,
 		EndpointID:    endpointID,
 		TraceID:       traceID,

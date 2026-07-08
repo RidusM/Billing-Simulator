@@ -1,5 +1,5 @@
 CREATE TABLE api_requests (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     
     trace_id UUID NOT NULL,
     

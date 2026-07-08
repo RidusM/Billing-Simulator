@@ -11,7 +11,7 @@ CREATE TABLE subscriptions (
     id UUID PRIMARY KEY,
     public_id VARCHAR(64) UNIQUE NOT NULL,
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
-    price_id UUID NOT NULL REFERENCES prices(id) ON DELETE RESTRICT
+    price_id UUID NOT NULL REFERENCES prices(id) ON DELETE RESTRICT,
     status subscription_status NOT NULL DEFAULT 'active',
     
     current_period_start TIMESTAMPTZ NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE subscriptions (
     metadata JSONB NOT NULL DEFAULT '{}',
     deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ,
     
     CONSTRAINT chk_subscriptions_period CHECK (current_period_end >= current_period_start)
 );

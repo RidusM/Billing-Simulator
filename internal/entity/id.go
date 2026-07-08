@@ -3,10 +3,13 @@ package entity
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 )
 
-func GeneratePublicID(prefix string) string {
+func GeneratePublicID(prefix string) (string, error) {
 	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-	return prefix + "_" + hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate public id: %w", err)
+	}
+	return prefix + "_" + hex.EncodeToString(b), nil
 }

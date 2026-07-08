@@ -1,7 +1,7 @@
 CREATE TYPE webhook_delivery_status AS ENUM ('pending', 'delivered', 'failed');
 
 CREATE TABLE webhook_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     public_id VARCHAR(64) UNIQUE NOT NULL,
     event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     endpoint_id UUID NOT NULL REFERENCES webhook_endpoints(id) ON DELETE CASCADE,
@@ -23,7 +23,7 @@ CREATE TABLE webhook_logs (
     delivered_at TIMESTAMPTZ,
     
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ,
     
     CONSTRAINT chk_webhook_logs_attempt CHECK (attempt >= 1)
 );

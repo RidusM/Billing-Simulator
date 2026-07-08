@@ -31,7 +31,7 @@ CREATE TABLE invoices (
     metadata JSONB NOT NULL DEFAULT '{}',
     deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ,
     
     CONSTRAINT chk_invoices_amount_positive CHECK (amount >= 0),
     CONSTRAINT chk_invoices_amount_paid CHECK (amount_paid >= 0),

@@ -16,7 +16,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// OutboxRepository — реализация репозитория для Transactional Outbox
 type OutboxRepository struct {
 	storage *postgres.Postgres
 }
@@ -27,21 +26,28 @@ func NewOutboxRepository(storage *postgres.Postgres) *OutboxRepository {
 	}
 }
 
-// Save — сохраняет одно событие в outbox
+// Save — сохраняет одно событие в outbox со всеми новыми полями
 func (r *OutboxRepository) Save(ctx context.Context, event *entity.OutboxEvent) error {
 	const op = "repository.outbox.Save"
 
 	sql, args, err := r.storage.Builder.
 		Insert("outbox_events").
-		Columns("id", "event_type", "aggregate_id", "payload", "occurred_at", "created_at", "processed").
+		Columns(
+			"id", "event_type", "aggregate_id", "aggregate_type",
+			"payload", "occurred_at", "created_at", "processed",
+			"attempt", "next_attempt_at",
+		).
 		Values(
 			event.ID,
 			event.EventType,
 			event.AggregateID,
+			event.AggregateType, // ← Добавлено
 			event.Payload,
 			event.OccurredAt,
 			event.CreatedAt,
 			event.Processed,
+			event.Attempt,       // ← Добавлено
+			event.NextAttemptAt, // ← Добавлено
 		).
 		ToSql()
 	if err != nil {
@@ -60,7 +66,7 @@ func (r *OutboxRepository) Save(ctx context.Context, event *entity.OutboxEvent) 
 	return nil
 }
 
-// SaveBatch — сохраняет несколько событий в outbox (оптимизировано через один INSERT)
+// SaveBatch — оптимизированный массовый INSERT
 func (r *OutboxRepository) SaveBatch(ctx context.Context, events []*entity.OutboxEvent) error {
 	const op = "repository.outbox.SaveBatch"
 
@@ -68,19 +74,25 @@ func (r *OutboxRepository) SaveBatch(ctx context.Context, events []*entity.Outbo
 		return nil
 	}
 
-	// Строим массовый INSERT
 	builder := r.storage.Builder.Insert("outbox_events").
-		Columns("id", "event_type", "aggregate_id", "payload", "occurred_at", "created_at", "processed")
+		Columns(
+			"id", "event_type", "aggregate_id", "aggregate_type",
+			"payload", "occurred_at", "created_at", "processed",
+			"attempt", "next_attempt_at",
+		)
 
 	for _, event := range events {
 		builder = builder.Values(
 			event.ID,
 			event.EventType,
 			event.AggregateID,
+			event.AggregateType, // ← Добавлено
 			event.Payload,
 			event.OccurredAt,
 			event.CreatedAt,
 			event.Processed,
+			event.Attempt,       // ← Добавлено
+			event.NextAttemptAt, // ← Добавлено
 		)
 	}
 
@@ -97,23 +109,24 @@ func (r *OutboxRepository) SaveBatch(ctx context.Context, events []*entity.Outbo
 	return nil
 }
 
-// GetUnprocessed — получает необработанные события для обработки воркером
-// olderThan — минимальный возраст события (защита от чтения незакоммиченных транзакций)
 func (r *OutboxRepository) GetUnprocessed(ctx context.Context, limit int, olderThan time.Duration) ([]*entity.OutboxEvent, error) {
 	const op = "repository.outbox.GetUnprocessed"
 
-	// Вычисляем пороговое время
-	cutoffTime := time.Now().UTC().Add(-olderThan)
-
 	sql, args, err := r.storage.
-		Select("id", "event_type", "aggregate_id", "payload", "occurred_at", "created_at", "processed", "processed_at", "error").
+		Select(
+			"id", "event_type", "aggregate_id", "aggregate_type",
+			"payload", "occurred_at", "created_at", "processed",
+			"processed_at", "error", "attempt", "next_attempt_at",
+		).
 		From("outbox_events").
 		Where(squirrel.And{
 			squirrel.Eq{"processed": false},
-			squirrel.LtOrEq{"created_at": cutoffTime},
+			squirrel.LtOrEq{"attempt": 5},
+			squirrel.Expr("created_at <= NOW() - ? * INTERVAL '1 SECOND'", olderThan.Seconds()),
 		}).
 		OrderBy("created_at ASC").
 		Limit(uint64(limit)).
+		Suffix("FOR UPDATE SKIP LOCKED").
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
@@ -125,18 +138,29 @@ func (r *OutboxRepository) GetUnprocessed(ctx context.Context, limit int, olderT
 	}
 	defer rows.Close()
 
-	return scanOutboxEvents(op, rows)
+	var events []*entity.OutboxEvent
+	for rows.Next() {
+		var e entity.OutboxEvent
+		err := rows.Scan(
+			&e.ID, &e.EventType, &e.AggregateID, &e.AggregateType, // ← Читаем AggregateType
+			&e.Payload, &e.OccurredAt, &e.CreatedAt, &e.Processed,
+			&e.ProcessedAt, &e.Error, &e.Attempt, &e.NextAttemptAt, // ← Читаем Attempt и NextAttemptAt
+		)
+		if err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		events = append(events, &e)
+	}
+	return events, nil
 }
 
-// MarkProcessed — помечает событие как успешно обработанное
 func (r *OutboxRepository) MarkProcessed(ctx context.Context, id uuid.UUID) error {
 	const op = "repository.outbox.MarkProcessed"
 
-	now := time.Now().UTC()
 	sql, args, err := r.storage.Builder.
 		Update("outbox_events").
 		Set("processed", true).
-		Set("processed_at", now).
+		Set("processed_at", squirrel.Expr("NOW()")).
 		Where(squirrel.Eq{"id": id}).
 		ToSql()
 	if err != nil {
@@ -154,13 +178,15 @@ func (r *OutboxRepository) MarkProcessed(ctx context.Context, id uuid.UUID) erro
 	return nil
 }
 
-// MarkFailed — помечает событие как ошибочное (для retry или DLQ)
 func (r *OutboxRepository) MarkFailed(ctx context.Context, id uuid.UUID, errorMsg string) error {
 	const op = "repository.outbox.MarkFailed"
 
 	sql, args, err := r.storage.Builder.
 		Update("outbox_events").
 		Set("error", errorMsg).
+		Set("attempt", squirrel.Expr("attempt + 1")).
+		Set("processed_at", squirrel.Expr("NOW()")).
+		// Здесь также можно запланировать экспоненциальный бэкофф для next_attempt_at, если необходимо
 		Where(squirrel.Eq{"id": id}).
 		ToSql()
 	if err != nil {
@@ -178,17 +204,14 @@ func (r *OutboxRepository) MarkFailed(ctx context.Context, id uuid.UUID, errorMs
 	return nil
 }
 
-// DeleteOldProcessed — удаляет старые обработанные события (cleanup)
 func (r *OutboxRepository) DeleteOldProcessed(ctx context.Context, olderThan time.Duration) (int64, error) {
 	const op = "repository.outbox.DeleteOldProcessed"
-
-	cutoffTime := time.Now().UTC().Add(-olderThan)
 
 	sql, args, err := r.storage.Builder.
 		Delete("outbox_events").
 		Where(squirrel.And{
 			squirrel.Eq{"processed": true},
-			squirrel.LtOrEq{"processed_at": cutoffTime},
+			squirrel.Expr("processed_at <= NOW() - ? * INTERVAL '1 SECOND'", olderThan.Seconds()),
 		}).
 		ToSql()
 	if err != nil {
@@ -203,7 +226,7 @@ func (r *OutboxRepository) DeleteOldProcessed(ctx context.Context, olderThan tim
 	return tag.RowsAffected(), nil
 }
 
-// scanOutboxEvents — вспомогательная функция для сканирования строк
+// scanOutboxEvents — хелпер, который тоже приводим к соответствию новой схеме
 func scanOutboxEvents(op string, rows pgx.Rows) ([]*entity.OutboxEvent, error) {
 	var events []*entity.OutboxEvent
 
@@ -213,12 +236,15 @@ func scanOutboxEvents(op string, rows pgx.Rows) ([]*entity.OutboxEvent, error) {
 			&e.ID,
 			&e.EventType,
 			&e.AggregateID,
+			&e.AggregateType, // ← Добавлено
 			&e.Payload,
 			&e.OccurredAt,
 			&e.CreatedAt,
 			&e.Processed,
 			&e.ProcessedAt,
 			&e.Error,
+			&e.Attempt,       // ← Добавлено
+			&e.NextAttemptAt, // ← Добавлено
 		)
 		if err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
@@ -233,7 +259,6 @@ func scanOutboxEvents(op string, rows pgx.Rows) ([]*entity.OutboxEvent, error) {
 	return events, nil
 }
 
-// executor — возвращает исполнителя запросов (поддержка транзакций)
 func (r *OutboxRepository) executor(ctx context.Context) postgres.QueryExecuter {
 	if qe, ok := transaction.TxFromCtx(ctx); ok {
 		return qe

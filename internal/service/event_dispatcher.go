@@ -15,11 +15,13 @@ type OutboxRepository interface {
 
 type EventDispatcher struct {
 	outbox OutboxRepository // ← Локальный интерфейс!
+	clock  VirtualClock
 	log    logger.Logger
 }
 
 func NewEventDispatcher(
 	outbox OutboxRepository, // ← Локальный интерфейс!
+	clock VirtualClock,
 	log logger.Logger,
 ) *EventDispatcher {
 	return &EventDispatcher{
@@ -45,7 +47,7 @@ func (d *EventDispatcher) Dispatch(ctx context.Context, events entity.DomainEven
 			continue
 		}
 
-		outboxEvent := entity.NewOutboxEvent(event, payload)
+		outboxEvent := entity.NewOutboxEvent(event, d.clock.Now(), payload)
 		outboxEvents = append(outboxEvents, outboxEvent)
 	}
 

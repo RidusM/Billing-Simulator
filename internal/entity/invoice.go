@@ -43,58 +43,48 @@ type Invoice struct {
 	domainEvents DomainEvents
 }
 
-func NewInvoice(customerID uuid.UUID, subscriptionID *uuid.UUID, amount int64, currency string, now time.Time) *Invoice {
+func NewInvoice(
+	customerID uuid.UUID,
+	customerPublicID string, // Добавлено
+	subscriptionID *uuid.UUID,
+	subscriptionPublicID *string, // Добавлено
+	amount int64,
+	currency string,
+	now time.Time,
+) *Invoice {
+	pID, _ := GeneratePublicID("in")
+
 	inv := &Invoice{
-		ID:              uuid.New(),
-		PublicID:        GeneratePublicID("in"),
-		CustomerID:      customerID,
-		SubscriptionID:  subscriptionID,
-		Amount:          amount,
-		AmountRemaining: amount,
-		Currency:        currency,
-		Status:          InvoiceStatusOpen,
-		Metadata:        make(map[string]string),
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		domainEvents:    make(DomainEvents, 0),
+		ID:                   uuid.New(),
+		PublicID:             pID,
+		CustomerID:           customerID,
+		CustomerPublicID:     customerPublicID, // Заполняем сразу
+		SubscriptionID:       subscriptionID,
+		SubscriptionPublicID: subscriptionPublicID, // Заполняем сразу
+		Amount:               amount,
+		AmountRemaining:      amount,
+		Currency:             currency,
+		Status:               InvoiceStatusOpen,
+		Metadata:             make(map[string]string),
+		CreatedAt:            now,
+		UpdatedAt:            now,
+		domainEvents:         make(DomainEvents, 0),
 	}
 
-	// Заполняем событие ПОЛНОЙ информацией
 	inv.domainEvents = append(inv.domainEvents, InvoiceCreatedEvent{
-		InvoiceID:      inv.ID,
-		InvoicePubID:   inv.PublicID,
-		CustomerID:     inv.CustomerID,
-		SubscriptionID: subscriptionID,
-		Amount:         inv.Amount,
-		Currency:       inv.Currency,
-		Status:         inv.Status,
-		CreatedAt:      now,
+		InvoiceID:         inv.ID,
+		InvoicePubID:      inv.PublicID,
+		CustomerID:        inv.CustomerID,
+		CustomerPubID:     inv.CustomerPublicID,
+		SubscriptionID:    subscriptionID,
+		SubscriptionPubID: subscriptionPublicID,
+		Amount:            inv.Amount,
+		Currency:          inv.Currency,
+		Status:            inv.Status,
+		CreatedAt:         now,
 	})
 
 	return inv
-}
-
-// SetCustomerPublicID — устанавливает публичный ID клиента для событий
-func (i *Invoice) SetCustomerPublicID(publicID string) {
-	i.CustomerPublicID = publicID
-	// Обновляем событие создания
-	for idx, event := range i.domainEvents {
-		if e, ok := event.(InvoiceCreatedEvent); ok {
-			e.CustomerPubID = publicID
-			i.domainEvents[idx] = e
-		}
-	}
-}
-
-// SetSubscriptionPublicID — устанавливает публичный ID подписки для событий
-func (i *Invoice) SetSubscriptionPublicID(publicID string) {
-	i.SubscriptionPublicID = &publicID
-	for idx, event := range i.domainEvents {
-		if e, ok := event.(InvoiceCreatedEvent); ok {
-			e.SubscriptionPubID = &publicID
-			i.domainEvents[idx] = e
-		}
-	}
 }
 
 func (i *Invoice) MarkPaid(now time.Time) error {
@@ -125,11 +115,17 @@ func (i *Invoice) MarkPaid(now time.Time) error {
 	return nil
 }
 
-func (i *Invoice) MarkPaymentFailed(now time.Time, errorCode string) error {
-	i.Status = InvoiceStatusUncollectible
+func (i *Invoice) MarkPaymentFailed(now time.Time, errorCode string, isFinalAttempt bool) error {
+	i.AttemptCount++
+	i.AttemptedAt = &now
 	i.UpdatedAt = now
 
-	// Заполняем событие ПОЛНОЙ информацией
+	if isFinalAttempt {
+		i.Status = InvoiceStatusUncollectible
+	} else {
+		i.Status = InvoiceStatusOpen
+	}
+
 	i.domainEvents = append(i.domainEvents, InvoicePaymentFailedEvent{
 		InvoiceID:      i.ID,
 		InvoicePubID:   i.PublicID,
