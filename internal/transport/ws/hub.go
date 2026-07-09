@@ -1,65 +1,54 @@
-package ws
+package websocket
 
 import (
-	"context"
 	"encoding/json"
-	"log/slog"
-	"net/http"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"bill-stripe-sim/pkg/logger"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+// Envelope — единый конверт для всех сообщений, летящих в dashboard.
+// Type используется фронтендом для роутинга (api_request / webhook_log / domain_event / clock).
+type Envelope struct {
+	Type      string          `json:"type"`
+	Payload   json.RawMessage `json:"payload"`
+	Timestamp time.Time       `json:"timestamp"`
 }
 
-const (
-	writeWait      = 10 * time.Second
-	pongWait       = 60 * time.Second
-	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 512
-)
-
-type client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan []byte
-}
-
+// Hub — держит набор активных клиентов и рассылает им сообщения.
+// Один Hub на процесс, потокобезопасен.
 type Hub struct {
-	mu         sync.RWMutex
-	clients    map[*client]struct{}
-	broadcast  chan LiveEvent
-	register   chan *client
-	unregister chan *client
-	log        *slog.Logger
+	mu      sync.RWMutex
+	clients map[*Client]struct{}
+
+	register   chan *Client
+	unregister chan *Client
+	broadcast  chan Envelope
+
+	log logger.Logger
 }
 
-func NewHub(log *slog.Logger) *Hub {
+func NewHub(log logger.Logger) *Hub {
 	return &Hub{
-		clients:    make(map[*client]struct{}),
-		broadcast:  make(chan LiveEvent, 256),
-		register:   make(chan *client),
-		unregister: make(chan *client),
+		clients:    make(map[*Client]struct{}),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+		broadcast:  make(chan Envelope, 256),
 		log:        log,
 	}
 }
 
-func (h *Hub) Run(ctx context.Context) {
+// Run — блокирующий цикл обработки Hub'а. Запускать в отдельной горутине при старте приложения.
+func (h *Hub) Run() {
 	for {
 		select {
-		case <-ctx.Done():
-			h.closeAll()
-			return
 		case c := <-h.register:
 			h.mu.Lock()
 			h.clients[c] = struct{}{}
 			h.mu.Unlock()
-			h.log.Debug("client registered", "count", len(h.clients))
+			h.log.Info("ws client connected", "total", h.clientCount())
+
 		case c := <-h.unregister:
 			h.mu.Lock()
 			if _, ok := h.clients[c]; ok {
@@ -67,11 +56,12 @@ func (h *Hub) Run(ctx context.Context) {
 				close(c.send)
 			}
 			h.mu.Unlock()
-			h.log.Debug("client unregistered", "count", len(h.clients))
-		case event := <-h.broadcast:
-			data, err := json.Marshal(event)
+			h.log.Info("ws client disconnected", "total", h.clientCount())
+
+		case env := <-h.broadcast:
+			data, err := json.Marshal(env)
 			if err != nil {
-				h.log.Error("marshal event", "err", err)
+				h.log.Error("ws: failed to marshal envelope", "error", err, "type", env.Type)
 				continue
 			}
 			h.mu.RLock()
@@ -79,7 +69,9 @@ func (h *Hub) Run(ctx context.Context) {
 				select {
 				case c.send <- data:
 				default:
-					h.log.Debug("client send buffer full, dropping")
+					// Клиент не успевает читать — не блокируем Hub, дропаем соединение.
+					// Само закрытие произойдёт через writePump -> unregister.
+					h.log.Warn("ws client send buffer full, dropping", "type", env.Type)
 				}
 			}
 			h.mu.RUnlock()
@@ -87,101 +79,25 @@ func (h *Hub) Run(ctx context.Context) {
 	}
 }
 
-func (h *Hub) Broadcast(event LiveEvent) {
-	select {
-	case h.broadcast <- event:
-	default:
-		h.log.Debug("broadcast channel full, dropping event")
-	}
-}
-
-func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+// Broadcast — неблокирующая отправка события всем подключённым клиентам.
+// Безопасно вызывать из любой горутины (HTTP middleware, OutboxProcessor, WebhookDeliveryService).
+func (h *Hub) Broadcast(eventType string, payload any) {
+	data, err := json.Marshal(payload)
 	if err != nil {
-		h.log.Error("ws upgrade", "err", err)
+		h.log.Error("ws: failed to marshal payload", "error", err, "type", eventType)
 		return
 	}
+	env := Envelope{Type: eventType, Payload: data, Timestamp: time.Now().UTC()}
 
-	c := &client{
-		hub:  h,
-		conn: conn,
-		send: make(chan []byte, 256),
-	}
-	h.register <- c
-
-	go c.writePump()
-	go c.readPump()
-}
-
-func (h *Hub) closeAll() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for c := range h.clients {
-		close(c.send)
-	}
-	h.clients = make(map[*client]struct{})
-}
-
-func (c *client) readPump() {
-	defer func() {
-		c.hub.unregister <- c
-		_ = c.conn.Close()
-	}()
-
-	c.conn.SetReadLimit(maxMessageSize)
-	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.conn.SetPongHandler(func(string) error {
-		_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
-		return nil
-	})
-
-	for {
-		_, _, err := c.conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				c.hub.log.Debug("ws read error", "err", err)
-			}
-			break
-		}
+	select {
+	case h.broadcast <- env:
+	default:
+		h.log.Warn("ws hub broadcast channel full, dropping event", "type", eventType)
 	}
 }
 
-func (c *client) writePump() {
-	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		ticker.Stop()
-		_ = c.conn.Close()
-	}()
-
-	for {
-		select {
-		case message, ok := <-c.send:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok {
-				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-			_, _ = w.Write(message)
-
-			n := len(c.send)
-			for i := 0; i < n; i++ {
-				_, _ = w.Write(<-c.send)
-			}
-
-			if err := w.Close(); err != nil {
-				return
-			}
-
-		case <-ticker.C:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
-		}
-	}
+func (h *Hub) clientCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients)
 }

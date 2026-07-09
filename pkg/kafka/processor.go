@@ -22,8 +22,8 @@ type Processor struct {
 	dlq      *dlq.DLQ
 	logger   logger.Logger
 
-	cfg Config
-	wg  sync.WaitGroup
+	cfg    Config
+	wg     sync.WaitGroup
 	cancel context.CancelFunc
 }
 
@@ -34,8 +34,8 @@ func NewProcessor(
 	opts ...ProcessorOption,
 ) (*Processor, error) {
 	if d == nil {
-        return nil, fmt.Errorf("kafka.NewProcessor: DLQ is required for guaranteed delivery")
-    }
+		return nil, fmt.Errorf("kafka.NewProcessor: DLQ is required for guaranteed delivery")
+	}
 
 	cfg := DefaultConfig()
 
@@ -65,14 +65,16 @@ func (p *Processor) Start(ctx context.Context, handler Handler) {
 
 func (p *Processor) Stop() {
 	if p.cancel != nil {
-        p.cancel()
-    }
-    p.consumer.Close()
-    p.wg.Wait()
+		p.cancel()
+	}
+	p.consumer.Close()
+	p.wg.Wait()
 }
 
 func (p *Processor) worker(ctx context.Context, handler Handler) {
 	defer p.wg.Done()
+
+	currentBackoff := p.cfg.BaseRetryDelay
 
 	for {
 		msg, err := p.consumer.Fetch(ctx)
@@ -83,7 +85,18 @@ func (p *Processor) worker(ctx context.Context, handler Handler) {
 			p.logger.LogAttrs(ctx, logger.ErrorLevel, "fetch error",
 				logger.Any("error", err),
 			)
-			continue
+
+			jitter := min(time.Duration(
+				rand.Int64N(int64(currentBackoff*_backoffMultiplier)),
+			), p.cfg.MaxRetryDelay)
+
+			timer := time.NewTimer(jitter)
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			}
 		}
 
 		p.processWithRetry(ctx, msg, handler)
@@ -131,25 +144,28 @@ func (p *Processor) processWithRetry(ctx context.Context, msg kafka.Message, han
 			rand.Int64N(int64(currentBackoff*_backoffMultiplier)),
 		), p.cfg.MaxRetryDelay)
 
+		timer := time.NewTimer(jitter)
 		select {
-		case <-time.After(jitter):
+		case <-timer.C:
 		case <-ctx.Done():
+			timer.Stop()
 			return
 		}
 
 		if currentBackoff < p.cfg.MaxRetryDelay/2 {
-    		currentBackoff *= _backoffMultiplier
-} else {
-    currentBackoff = p.cfg.MaxRetryDelay
-}
+			currentBackoff *= _backoffMultiplier
+		} else {
+			currentBackoff = p.cfg.MaxRetryDelay
+		}
 	}
 
 	if err := p.dlq.PublishError(ctx, msg, lastErr, p.cfg.MaxAttempts); err != nil {
-    p.logger.LogAttrs(ctx, logger.ErrorLevel, "dlq publish failed (buffer full + sync fallback failed)",
-        logger.Any("err", err),
-    )
-    return
-}
+		p.logger.LogAttrs(ctx, logger.ErrorLevel, "dlq publish failed — message LOST, committing to avoid infinite loop",
+			logger.Any("err", err),
+			logger.Int64("offset", msg.Offset),
+			logger.String("topic", msg.Topic),
+		)
+	}
 
 	if err := p.consumer.Commit(ctx, msg); err != nil {
 		p.logger.LogAttrs(ctx, logger.ErrorLevel, "final commit error",

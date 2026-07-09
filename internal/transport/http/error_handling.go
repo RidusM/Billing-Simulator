@@ -25,7 +25,7 @@ func (h *BillingHandler) handleServiceError(c *gin.Context, err error) {
 
 	case errors.Is(err, entity.ErrConflictingData),
 		errors.Is(err, entity.ErrInvoiceAlreadyPaid),
-		errors.Is(err, entity.ErrSubscriptionCanceled):
+		errors.Is(err, entity.ErrSubscriptionAlreadyCanceled): // ← ПРАВИЛЬНОЕ ИМЯ
 		statusCode = http.StatusConflict
 		errorCode = "conflict"
 		message = err.Error()

@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -138,6 +139,16 @@ func (i *Invoice) MarkPaymentFailed(now time.Time, errorCode string, isFinalAtte
 		FailedAt:       now,
 	})
 
+	return nil
+}
+
+func (i *Invoice) MarkPastDue(now time.Time) error {
+	if i.Status != InvoiceStatusOpen {
+		return fmt.Errorf("invoice is not in open state")
+	}
+	i.Status = InvoiceStatusOpen // Оставляем open, но помечаем как просроченный
+	i.UpdatedAt = now
+	// Опционально: можно добавить событие InvoiceOverdueEvent
 	return nil
 }
 

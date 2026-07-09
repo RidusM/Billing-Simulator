@@ -1,25 +1,27 @@
 package clock
 
 import (
-	"bill-stripe-sim/pkg/logger"
 	"context"
 	"fmt"
 	"sync"
 	"time"
+
+	"bill-stripe-sim/pkg/logger"
 )
 
 type Store interface {
 	SaveOffset(ctx context.Context, offset time.Duration) error
 	LoadOffset(ctx context.Context) (time.Duration, error)
+	PublishOffsetChanged(ctx context.Context, offset time.Duration) error
+	SubscribeOffsetChanged(ctx context.Context) (<-chan time.Duration, error)
 }
 
 type TimeJumpListener func(oldTime, newTime time.Time)
 
 type VirtualClock struct {
-	mu     sync.RWMutex
-	offset time.Duration
-	store  Store
-
+	mu        sync.RWMutex
+	offset    time.Duration
+	store     Store
 	logger    logger.Logger
 	listeners []TimeJumpListener
 }
@@ -29,11 +31,9 @@ func NewVirtualClock(s Store, logger logger.Logger) (*VirtualClock, error) {
 		store:  s,
 		logger: logger,
 	}
-
 	if s != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-
 		offset, err := s.LoadOffset(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("clock.NewVirtualClock: load offset: %w", err)
@@ -41,8 +41,44 @@ func NewVirtualClock(s Store, logger logger.Logger) (*VirtualClock, error) {
 		vc.offset = offset
 		logger.Info("virtual clock initialized", "offset", offset.String())
 	}
-
 	return vc, nil
+}
+
+func (vc *VirtualClock) StartSync(ctx context.Context) error {
+	if vc.store == nil {
+		return nil
+	}
+
+	ch, err := vc.store.SubscribeOffsetChanged(ctx)
+	if err != nil {
+		return fmt.Errorf("clock.VirtualClock.StartSync: subscribe: %w", err)
+	}
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case newOffset, ok := <-ch:
+				if !ok {
+					return
+				}
+				vc.mu.Lock()
+				oldOffset := vc.offset
+				vc.offset = newOffset
+				vc.mu.Unlock()
+
+				if oldOffset != newOffset {
+					vc.logger.Info("clock offset synced from another instance",
+						"old_offset", oldOffset.String(),
+						"new_offset", newOffset.String(),
+					)
+				}
+			}
+		}
+	}()
+
+	return nil
 }
 
 func (vc *VirtualClock) Now() time.Time {
@@ -61,41 +97,52 @@ func (vc *VirtualClock) Advance(d time.Duration) error {
 	vc.mu.Lock()
 	realNow := time.Now()
 	oldTime := realNow.Add(vc.offset)
-
 	vc.offset += d
 	newTime := realNow.Add(vc.offset)
 	offset := vc.offset
 	vc.mu.Unlock()
 
-	// Сохраняем новое смещение в Redis
 	if vc.store != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+
 		if err := vc.store.SaveOffset(ctx, offset); err != nil {
 			vc.logger.Error("failed to save clock offset to Redis in Advance", "error", err)
 			return fmt.Errorf("save offset: %w", err)
 		}
+
+		if err := vc.store.PublishOffsetChanged(ctx, offset); err != nil {
+			vc.logger.Error("failed to publish clock offset change", "error", err)
+		}
 	}
 
-	// Уведомляем асинхронно через существующий метод
 	vc.notifyListeners(oldTime, newTime)
-
 	return nil
 }
 
 func (vc *VirtualClock) SetTime(t time.Time) {
 	vc.mu.Lock()
+	realNow := time.Now()
+	oldTime := realNow.Add(vc.offset)
 	vc.offset = time.Until(t)
+	newTime := realNow.Add(vc.offset)
 	offset := vc.offset
 	vc.mu.Unlock()
 
 	if vc.store != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+
 		if err := vc.store.SaveOffset(ctx, offset); err != nil {
-			vc.logger.Error("failed to save clock offset to Redis")
+			vc.logger.Error("failed to save clock offset to Redis", "error", err)
+		}
+
+		if err := vc.store.PublishOffsetChanged(ctx, offset); err != nil {
+			vc.logger.Error("failed to publish clock offset change", "error", err)
 		}
 	}
+
+	vc.notifyListeners(oldTime, newTime)
 }
 
 func (vc *VirtualClock) Offset() time.Duration {
@@ -106,7 +153,10 @@ func (vc *VirtualClock) Offset() time.Duration {
 
 func (vc *VirtualClock) Reset() {
 	vc.mu.Lock()
+	realNow := time.Now()
+	oldTime := realNow.Add(vc.offset)
 	vc.offset = 0
+	newTime := realNow
 	vc.mu.Unlock()
 
 	if vc.store != nil {
@@ -114,11 +164,15 @@ func (vc *VirtualClock) Reset() {
 		defer cancel()
 
 		if err := vc.store.SaveOffset(ctx, 0); err != nil {
-			vc.logger.Error("failed to reset clock offset in Redis",
-				"error", err,
-			)
+			vc.logger.Error("failed to reset clock offset in Redis", "error", err)
+		}
+
+		if err := vc.store.PublishOffsetChanged(ctx, 0); err != nil {
+			vc.logger.Error("failed to publish clock offset change", "error", err)
 		}
 	}
+
+	vc.notifyListeners(oldTime, newTime)
 }
 
 func (vc *VirtualClock) IsAhead() bool {
@@ -129,9 +183,11 @@ func (vc *VirtualClock) IsAhead() bool {
 
 func (vc *VirtualClock) notifyListeners(oldTime, newTime time.Time) {
 	vc.mu.RLock()
-	defer vc.mu.RUnlock()
+	listeners := make([]TimeJumpListener, len(vc.listeners))
+	copy(listeners, vc.listeners)
+	vc.mu.RUnlock()
 
-	for _, listener := range vc.listeners {
+	for _, listener := range listeners {
 		go listener(oldTime, newTime)
 	}
 }

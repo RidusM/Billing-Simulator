@@ -7,16 +7,16 @@ import (
 )
 
 type SubscriptionCreatedEvent struct {
-	SubscriptionID    uuid.UUID          `json:"subscription_id"`
-	SubscriptionPubID string             `json:"subscription_public_id"`
-	CustomerID        uuid.UUID          `json:"customer_id"`
-	CustomerPubID     string             `json:"customer_public_id"`
-	PriceID           uuid.UUID          `json:"price_id"`
-	PricePubID        string             `json:"price_public_id"`
-	Status            SubscriptionStatus `json:"status"`
-	CurrentPeriodEnd  time.Time          `json:"current_period_end"`
-	NextBillingAt     time.Time          `json:"next_billing_at"`
-	CreatedAt         time.Time          `json:"created_at"`
+	SubscriptionID    uuid.UUID          
+	SubscriptionPubID string             
+	CustomerID        uuid.UUID          
+	CustomerPubID     string             
+	PriceID           uuid.UUID          
+	PricePubID        string             
+	Status            SubscriptionStatus 
+	CurrentPeriodEnd  time.Time          
+	NextBillingAt     time.Time          
+	CreatedAt         time.Time         
 }
 
 func (e SubscriptionCreatedEvent) EventType() string      { return "subscription.created" }
@@ -26,13 +26,13 @@ func (e SubscriptionCreatedEvent) AggregateType() string  { return "subscription
 
 // SubscriptionCanceledEvent
 type SubscriptionCanceledEvent struct {
-	SubscriptionID    uuid.UUID          `json:"subscription_id"`
-	SubscriptionPubID string             `json:"subscription_public_id"`
-	CustomerID        uuid.UUID          `json:"customer_id"`
-	CustomerPubID     string             `json:"customer_public_id"`
-	Status            SubscriptionStatus `json:"status"`
-	CanceledAt        time.Time          `json:"canceled_at"`
-	AtPeriodEnd       bool               `json:"at_period_end"`
+	SubscriptionID    uuid.UUID          
+	SubscriptionPubID string             
+	CustomerID        uuid.UUID          
+	CustomerPubID     string             
+	Status            SubscriptionStatus 
+	CanceledAt        time.Time          
+	AtPeriodEnd       bool               
 }
 
 func (e SubscriptionCanceledEvent) EventType() string      { return "subscription.canceled" }
@@ -42,17 +42,17 @@ func (e SubscriptionCanceledEvent) AggregateType() string  { return "subscriptio
 
 // SubscriptionRenewedEvent
 type SubscriptionRenewedEvent struct {
-	SubscriptionID    uuid.UUID     `json:"subscription_id"`
-	SubscriptionPubID string        `json:"subscription_public_id"`
-	CustomerID        uuid.UUID     `json:"customer_id"`
-	CustomerPubID     string        `json:"customer_public_id"`
-	InvoiceID         uuid.UUID     `json:"invoice_id"`
-	InvoicePubID      string        `json:"invoice_public_id"`
-	InvoiceAmount     int64         `json:"invoice_amount"`
-	InvoiceCurrency   string        `json:"invoice_currency"`
-	InvoiceStatus     InvoiceStatus `json:"invoice_status"`
-	NewPeriodEnd      time.Time     `json:"new_period_end"`
-	RenewedAt         time.Time     `json:"renewed_at"`
+	SubscriptionID    uuid.UUID     
+	SubscriptionPubID string        
+	CustomerID        uuid.UUID     
+	CustomerPubID     string        
+	InvoiceID         uuid.UUID     
+	InvoicePubID      string        
+	InvoiceAmount     int64        
+	InvoiceCurrency   string       
+	InvoiceStatus     InvoiceStatus 
+	NewPeriodEnd      time.Time    
+	RenewedAt         time.Time   
 }
 
 func (e SubscriptionRenewedEvent) EventType() string      { return "subscription.renewed" }

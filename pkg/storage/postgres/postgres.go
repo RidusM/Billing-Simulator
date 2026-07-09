@@ -26,7 +26,6 @@ type Postgres struct {
 
 func New(baseCfg Config, log logger.Logger, opts ...Option) (*Postgres, error) {
 	const op = "storage.postgres.New"
-
 	cfg := defaultConfigs(baseCfg)
 	for _, opt := range opts {
 		opt(cfg)
@@ -44,47 +43,63 @@ func New(baseCfg Config, log logger.Logger, opts ...Option) (*Postgres, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
-
 	poolConfig.MaxConns = cfg.MaxPoolSize
-
 	poolConfig.ConnConfig.Tracer = otelpgx.NewTracer()
 
 	currentBackoff := cfg.BaseRetryDelay
+	var lastErr error
 
 	for attemptCount := 1; attemptCount <= cfg.ConnAttempts; attemptCount++ {
-		pg.Pool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
-		if err == nil {
-			ctx, cancel := context.WithTimeout(context.Background(), _defaultPingTimeout)
-			err = pg.Pool.Ping(ctx)
-			cancel()
-
-			if err == nil {
-				pg.logger.Info("postgresql connection successful")
-				return pg, nil
+		pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
+		if err != nil {
+			lastErr = err
+			//nolint:gosec // weak random is completely fine for exponential backoff jitter
+			jitter := min(time.Duration(rand.Int64N(int64(currentBackoff*_backoffMultiplier))), cfg.MaxRetryDelay)
+			pg.logger.Warn("postgresql connection attempt failed, retrying...",
+				"operation", op,
+				"attempt", attemptCount,
+				"retry_after", jitter.String(),
+				"error", err.Error(),
+			)
+			time.Sleep(jitter)
+			if currentBackoff < cfg.MaxRetryDelay/2 {
+				currentBackoff *= _backoffMultiplier
+			} else {
+				currentBackoff = cfg.MaxRetryDelay
 			}
-
-			pg.Pool.Close()
+			continue
 		}
 
-		//nolint:gosec // weak random is completely fine for exponential backoff jitter
-		jitter := min(time.Duration(rand.Int64N(int64(currentBackoff*_backoffMultiplier))), cfg.MaxRetryDelay)
+		ctx, cancel := context.WithTimeout(context.Background(), _defaultPingTimeout)
+		err = pool.Ping(ctx)
+		cancel()
 
-		pg.logger.Warn("postgresql connection attempt failed, retrying...",
-			"operation", op,
-			"attempt", attemptCount,
-			"retry_after", jitter.String(),
-			"error", err.Error(),
-		)
+		if err != nil {
+			pool.Close()
+			lastErr = err
+			//nolint:gosec // weak random is completely fine for exponential backoff jitter
+			jitter := min(time.Duration(rand.Int64N(int64(currentBackoff*_backoffMultiplier))), cfg.MaxRetryDelay)
+			pg.logger.Warn("postgresql ping failed, retrying...",
+				"operation", op,
+				"attempt", attemptCount,
+				"retry_after", jitter.String(),
+				"error", err.Error(),
+			)
+			time.Sleep(jitter)
+			if currentBackoff < cfg.MaxRetryDelay/2 {
+				currentBackoff *= _backoffMultiplier
+			} else {
+				currentBackoff = cfg.MaxRetryDelay
+			}
+			continue
+		}
 
-		time.Sleep(jitter)
-		if currentBackoff < cfg.MaxRetryDelay/2 {
-    currentBackoff *= _backoffMultiplier
-} else {
-    currentBackoff = cfg.MaxRetryDelay
-}
+		pg.Pool = pool
+		pg.logger.Info("postgresql connection successful")
+		return pg, nil
 	}
 
-	return nil, fmt.Errorf("%s: failed to connect after %d attempts: %w", op, cfg.ConnAttempts, err)
+	return nil, fmt.Errorf("%s: failed to connect after %d attempts: %w", op, cfg.ConnAttempts, lastErr)
 }
 
 func (p *Postgres) Ping(ctx context.Context) error {

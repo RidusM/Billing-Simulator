@@ -8,11 +8,11 @@ import (
 
 // CustomerCreatedEvent
 type CustomerCreatedEvent struct {
-	CustomerID    uuid.UUID `json:"customer_id"`
-	CustomerPubID string    `json:"customer_public_id"`
-	Email         string    `json:"email"`
-	Name          string    `json:"name"`
-	CreatedAt     time.Time `json:"created_at"`
+	CustomerID    uuid.UUID 
+	CustomerPubID string
+	Email         string
+	Name          string
+	CreatedAt     time.Time
 }
 
 func (e CustomerCreatedEvent) EventType() string      { return "customer.created" }

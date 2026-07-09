@@ -45,6 +45,16 @@ func NewCustomer(email, name string, now time.Time) *Customer {
 	return c
 }
 
+func (c *Customer) UpdateEmail(email string, now time.Time) {
+	c.Email = email
+	c.UpdatedAt = now
+}
+
+func (c *Customer) UpdateName(name string, now time.Time) {
+	c.Name = name
+	c.UpdatedAt = now
+}
+
 func (c *Customer) GetAndClearEvents() DomainEvents {
 	events := c.domainEvents
 	c.domainEvents = nil

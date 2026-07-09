@@ -36,6 +36,11 @@ type SubscriptionResponse struct {
 	NextBillingAt    time.Time `json:"next_billing_at"`
 }
 
+// swagger:model AdvanceTimeRequest
+type AdvanceTimeRequest struct {
+	Duration time.Duration `json:"duration" binding:"required"` // например, 720 * time.Hour для 30 дней
+}
+
 // swagger:model BaseResponse
 type BaseResponse struct {
 	Data any `json:"data"`

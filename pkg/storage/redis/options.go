@@ -1,6 +1,8 @@
 package redis
 
-import "time"
+import (
+	"time"
+)
 
 const (
 	_defaultPoolSize     = 20
@@ -10,11 +12,10 @@ const (
 )
 
 type Config struct {
-	Host     string
-	Port     string
-	Password string
-	DB       int
-
+	Host         string
+	Port         string
+	Password     string
+	DB           int
 	TTL          time.Duration
 	PoolSize     int
 	MinIdleConns int
@@ -30,13 +31,22 @@ func defaultConfigs(baseCfg Config) *Config {
 		Password:     baseCfg.Password,
 		DB:           baseCfg.DB,
 		TTL:          baseCfg.TTL,
-		PoolSize:     _defaultPoolSize,
-		MinIdleConns: _defaultMinIdleConns,
-		PoolTimeout:  _defaultPoolTimeout,
+		PoolSize:     baseCfg.PoolSize,
+		MinIdleConns: baseCfg.MinIdleConns,
+		PoolTimeout:  baseCfg.PoolTimeout,
 	}
 
 	if cfg.TTL == 0 {
 		cfg.TTL = _defaultCacheTTL
+	}
+	if cfg.PoolSize == 0 {
+		cfg.PoolSize = _defaultPoolSize
+	}
+	if cfg.MinIdleConns == 0 {
+		cfg.MinIdleConns = _defaultMinIdleConns
+	}
+	if cfg.PoolTimeout == 0 {
+		cfg.PoolTimeout = _defaultPoolTimeout
 	}
 
 	return cfg

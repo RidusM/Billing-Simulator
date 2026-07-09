@@ -90,6 +90,18 @@ func (s *WebhookDeliveryService) deliverToEndpoint(
 	timestamp := now.Unix()
 	signature := ep.SignPayload(payload, timestamp)
 
+	event := &entity.Event{
+		ID:        uuid.New(),
+		PublicID:  "evt_" + uuid.New().String()[:8],
+		Type:      entity.EventType(eventType),
+		Payload:   payload,
+		CreatedAt: now,
+	}
+	if err := s.events.Create(ctx, event); err != nil {
+		s.log.Error("failed to create event", "error", err)
+		return
+	}
+
 	const maxRetries = 5
 	const initialBackoff = 1 * time.Second
 	const maxBackoff = 5 * time.Minute
@@ -98,10 +110,10 @@ func (s *WebhookDeliveryService) deliverToEndpoint(
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		currentNow := s.clock.Now()
-
 		logEntry := &entity.WebhookLog{
 			ID:         uuid.New(),
 			PublicID:   "wl_" + uuid.New().String()[:8],
+			EventID:    event.ID,
 			EndpointID: ep.ID,
 			TraceID:    traceID,
 			EventType:  eventType,
@@ -112,9 +124,19 @@ func (s *WebhookDeliveryService) deliverToEndpoint(
 			CreatedAt:  currentNow,
 			UpdatedAt:  currentNow,
 		}
-		_ = s.logs.Create(ctx, logEntry)
+
+		if err := s.logs.Create(ctx, logEntry); err != nil {
+			s.log.Error("failed to create webhook log", "error", err)
+		}
 
 		statusCode, err := s.sender.Send(ctx, ep.URL, payload, signature, timestamp)
+		if err == nil && statusCode >= 200 && statusCode < 300 {
+			logEntry.Status = entity.WebhookStatusDelivered
+			logEntry.ResponseCode = &statusCode
+			logEntry.UpdatedAt = s.clock.Now()
+			_ = s.logs.Update(ctx, logEntry)
+			return
+		}
 
 		if err == nil && statusCode >= 200 && statusCode < 300 {
 			logEntry.Status = entity.WebhookStatusDelivered

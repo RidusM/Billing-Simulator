@@ -70,22 +70,24 @@ func (s *NotificationService) HandleDomainEvent(
 	}
 }
 
-// handleEvent — универсальный обработчик
-func (s *NotificationService) handleEvent(
-	ctx context.Context,
-	customerID uuid.UUID,
-	eventType entity.EventType,
-	payload []byte,
-) error {
-	// Отправляем в Kafka
-	topic := fmt.Sprintf("billing.%s", eventType)
+func (s *NotificationService) handleEvent(ctx context.Context, customerID uuid.UUID, eventType entity.EventType, payload []byte) error {
+	var multiErr error
+
+	// Kafka
 	if err := s.sender.Send(ctx, topic, payload, nil); err != nil {
-		s.log.Error("failed to send event to Kafka",
-			"event_type", eventType,
-			"error", err,
-		)
+		s.log.Error("failed to send to Kafka", "error", err)
+		multiErr = fmt.Errorf("kafka: %w", err)
 	}
 
-	// Отправляем webhook
-	return s.webhook.Deliver(ctx, customerID, string(eventType), payload)
+	// Webhook
+	if err := s.webhook.Deliver(ctx, customerID, string(eventType), payload); err != nil {
+		s.log.Error("failed to deliver webhook", "error", err)
+		if multiErr != nil {
+			multiErr = fmt.Errorf("%v; webhook: %w", multiErr, err)
+		} else {
+			multiErr = fmt.Errorf("webhook: %w", err)
+		}
+	}
+
+	return multiErr
 }

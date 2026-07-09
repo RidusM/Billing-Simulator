@@ -5,11 +5,18 @@ import (
 	"bill-stripe-sim/pkg/logger"
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 type (
+	OutboxPoller interface {
+		GetUnprocessed(ctx context.Context, limit int, olderThan time.Duration) ([]*entity.OutboxEvent, error)
+		MarkProcessed(ctx context.Context, id uuid.UUID) error
+		MarkFailed(ctx context.Context, id uuid.UUID, errorMsg string) error
+		DeleteOldProcessed(ctx context.Context, olderThan time.Duration) (int64, error)
+	}
 	SubscriptionRepository interface {
 		Create(ctx context.Context, s *entity.Subscription) error
 		GetByID(ctx context.Context, id uuid.UUID) (*entity.Subscription, error)
@@ -176,7 +183,7 @@ func (bs *BillingService) RenewSubscription(ctx context.Context, subID uuid.UUID
 			return fmt.Errorf("renew subscription: %w", err)
 		}
 
-		simStatus := simulatePayment()
+		simStatus := simulatePayment(ctx, )
 
 		if simStatus == entity.InvoiceStatusPaid {
 			if err := inv.MarkPaid(now); err != nil {

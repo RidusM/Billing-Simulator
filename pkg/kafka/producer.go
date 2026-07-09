@@ -22,6 +22,10 @@ type Producer struct {
 }
 
 func NewProducer(brokers []string, topic string, log logger.Logger) *Producer {
+	staticMetadataCtx := context.WithValue(context.Background(), kafkaMetadataKey, map[string]string{
+		"topic": topic,
+	})
+
 	return &Producer{
 		writer: &kafka.Writer{
 			Addr:         kafka.TCP(brokers...),
@@ -30,13 +34,25 @@ func NewProducer(brokers []string, topic string, log logger.Logger) *Producer {
 			BatchSize:    _defaultBatchSize,
 			BatchTimeout: _defaultBatchTimeout,
 			Logger: kafka.LoggerFunc(func(msg string, args ...any) {
-				log.LogAttrs(context.Background(), logger.InfoLevel, "producer info",
-					logger.String("message", fmt.Sprintf(msg, args...)),
+				var formatted string
+				if len(args) > 0 {
+					formatted = fmt.Sprintf(msg, args...)
+				} else {
+					formatted = msg
+				}
+				log.LogAttrs(staticMetadataCtx, logger.InfoLevel, "producer info",
+					logger.String("message", formatted),
 				)
 			}),
 			ErrorLogger: kafka.LoggerFunc(func(msg string, args ...any) {
-				log.LogAttrs(context.Background(), logger.ErrorLevel, "producer error",
-					logger.String("error", fmt.Sprintf(msg, args...)),
+				var formatted string
+				if len(args) > 0 {
+					formatted = fmt.Sprintf(msg, args...)
+				} else {
+					formatted = msg
+				}
+				log.LogAttrs(staticMetadataCtx, logger.ErrorLevel, "producer error",
+					logger.String("error", formatted),
 				)
 			}),
 			AllowAutoTopicCreation: false,

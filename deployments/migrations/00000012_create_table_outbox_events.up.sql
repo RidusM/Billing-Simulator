@@ -12,6 +12,9 @@ CREATE TABLE outbox_events (
     processed BOOLEAN NOT NULL DEFAULT false,
     processed_at TIMESTAMPTZ,
     error TEXT,
+
+    attempt INT NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ,
     
     CONSTRAINT chk_outbox_events_payload CHECK (jsonb_typeof(payload) = 'object')
 );
@@ -31,4 +34,8 @@ CREATE INDEX idx_outbox_events_aggregate_id
     ON outbox_events(aggregate_id);
 
 CREATE INDEX idx_outbox_events_aggregate_type_id
-    ON outbox_events(aggregate_type, aggregate_id)
+    ON outbox_events(aggregate_type, aggregate_id);
+
+CREATE INDEX idx_outbox_events_unprocessed
+ON outbox_events(next_attempt_at ASC)
+WHERE processed = false AND (next_attempt_at IS NULL OR next_attempt_at <= NOW());

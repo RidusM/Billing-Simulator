@@ -30,14 +30,14 @@ type Config struct {
 }
 
 func (c Config) DSN() string {
-    return fmt.Sprintf(
-        "postgres://%s:%s@%s/%s?sslmode=%s",
-        url.PathEscape(c.User),
-        url.PathEscape(c.Password),
-        net.JoinHostPort(c.Host, c.Port),
-        url.PathEscape(c.Name),
-        c.SSLMode,
-    )
+	return fmt.Sprintf(
+		"postgres://%s:%s@%s/%s?sslmode=%s",
+		url.PathEscape(c.User),
+		url.PathEscape(c.Password),
+		net.JoinHostPort(c.Host, c.Port),
+		url.PathEscape(c.Name),
+		c.SSLMode,
+	)
 }
 
 func defaultConfigs(baseCfg Config) *Config {
@@ -48,11 +48,25 @@ func defaultConfigs(baseCfg Config) *Config {
 		Password:       baseCfg.Password,
 		Name:           baseCfg.Name,
 		SSLMode:        baseCfg.SSLMode,
-		MaxPoolSize:    _defaultMaxPoolSize,
-		ConnAttempts:   _defaultConnAttempts,
-		BaseRetryDelay: _defaultBaseRetryDelay,
-		MaxRetryDelay:  _defaultMaxRetryDelay,
+		MaxPoolSize:    baseCfg.MaxPoolSize,
+		ConnAttempts:   baseCfg.ConnAttempts,
+		BaseRetryDelay: baseCfg.BaseRetryDelay,
+		MaxRetryDelay:  baseCfg.MaxRetryDelay,
 	}
+
+	if cfg.MaxPoolSize == 0 {
+		cfg.MaxPoolSize = _defaultMaxPoolSize
+	}
+	if cfg.ConnAttempts == 0 {
+		cfg.ConnAttempts = _defaultConnAttempts
+	}
+	if cfg.BaseRetryDelay == 0 {
+		cfg.BaseRetryDelay = _defaultBaseRetryDelay
+	}
+	if cfg.MaxRetryDelay == 0 {
+		cfg.MaxRetryDelay = _defaultMaxRetryDelay
+	}
+
 	return cfg
 }
 

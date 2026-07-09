@@ -5,6 +5,7 @@ import (
 	"bill-stripe-sim/pkg/logger"
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -16,8 +17,11 @@ const _maxRequestBodySize = 1 << 20
 type BillingService interface {
 	CreateCustomer(ctx context.Context, email string) (*entity.Customer, error)
 	CreateSubscription(ctx context.Context, customerID uuid.UUID, priceID string) (*entity.Subscription, error)
-	CancelSubscription(ctx context.Context, subID string) error
+	CancelSubscription(ctx context.Context, subID string, atPeriodEnd bool) error // ← ДОБАВЛЕНО atPeriodEnd
 	GetSubscription(ctx context.Context, subID uuid.UUID) (*entity.Subscription, error)
+	// Дополнительно для Time Travel:
+	AdvanceTime(ctx context.Context, d time.Duration) error
+	GetCurrentTime() time.Time
 }
 
 type BillingHandler struct {

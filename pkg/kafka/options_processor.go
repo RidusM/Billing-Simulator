@@ -8,7 +8,7 @@ import (
 const (
 	_defaultMaxAttempts    = 3
 	_defaultBaseRetryDelay = 1 * time.Second
-    _defaultMaxRetryDelay  = 30 * time.Second
+	_defaultMaxRetryDelay  = 30 * time.Second
 	_defaultWorkersCount   = 1
 )
 
@@ -24,7 +24,7 @@ func DefaultConfig() Config {
 		MaxAttempts:    _defaultMaxAttempts,
 		BaseRetryDelay: _defaultBaseRetryDelay,
 		MaxRetryDelay:  _defaultMaxRetryDelay,
-		WorkersCount:   1,
+		WorkersCount:   _defaultWorkersCount,
 	}
 }
 

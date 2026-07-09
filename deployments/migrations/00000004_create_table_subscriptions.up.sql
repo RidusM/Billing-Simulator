@@ -44,3 +44,7 @@ CREATE INDEX idx_subscriptions_customer_id
 CREATE INDEX idx_subscriptions_status 
     ON subscriptions(status) 
     WHERE deleted_at IS NULL;
+
+CREATE INDEX idx_subscriptions_trial_end
+ON subscriptions(trial_end)
+WHERE trial_end IS NOT NULL AND status = 'trialing' AND deleted_at IS NULL;

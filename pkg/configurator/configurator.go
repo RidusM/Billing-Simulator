@@ -2,9 +2,7 @@ package configurator
 
 import (
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"os"
 	"reflect"
 	"strings"
@@ -19,10 +17,25 @@ var (
 	ErrConfigValidation   = errors.New("config validation failed")
 )
 
+var globalValidator *validator.Validate
+
+func init() {
+	globalValidator = validator.New()
+	globalValidator.RegisterTagNameFunc(func(fld reflect.StructField) string {
+		for _, tag := range []string{"env", "yaml", "json"} {
+			name := strings.Split(fld.Tag.Get(tag), ",")[0]
+			if name != "" && name != "-" {
+				return name
+			}
+		}
+		return fld.Name
+	})
+}
+
 func Load(cfg any) error {
-	path := fetchConfigPath()
+	path := os.Getenv("CONFIG_PATH")
 	if path == "" {
-		return fmt.Errorf("%w (use --config flag or CONFIG_PATH env)", ErrConfigPathNotSet)
+		return fmt.Errorf("%w (use CONFIG_PATH env)", ErrConfigPathNotSet)
 	}
 	return LoadPath(path, cfg)
 }
@@ -36,19 +49,7 @@ func LoadPath(configPath string, cfg any) error {
 		return fmt.Errorf("read config: %w", err)
 	}
 
-	validate := validator.New()
-
-	validate.RegisterTagNameFunc(func(fld reflect.StructField) string {
-		for _, tag := range []string{"env", "yaml", "json"} {
-			name := strings.Split(fld.Tag.Get(tag), ",")[0]
-			if name != "" && name != "-" {
-				return name
-			}
-		}
-		return fld.Name
-	})
-
-	if err := validate.Struct(cfg); err != nil {
+	if err := globalValidator.Struct(cfg); err != nil {
 		return formatValidationError(err)
 	}
 
@@ -67,20 +68,4 @@ func formatValidationError(err error) error {
 		return fmt.Errorf("%w: %s", ErrConfigValidation, strings.Join(msgs, "; "))
 	}
 	return fmt.Errorf("%w: %w", ErrConfigValidation, err)
-}
-
-func fetchConfigPath() string {
-	if path := os.Getenv("CONFIG_PATH"); path != "" {
-		return path
-	}
-
-	fs := flag.NewFlagSet("config-loader", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
-	var path string
-	fs.StringVar(&path, "config", "", "path to config file")
-
-	_ = fs.Parse(os.Args[1:])
-
-	return path
 }

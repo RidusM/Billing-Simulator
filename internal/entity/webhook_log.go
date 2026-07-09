@@ -63,3 +63,11 @@ func (wl *WebhookLog) MarkDelivered(responseCode int, now time.Time) {
 	wl.DeliveredAt = &now
 	wl.UpdatedAt = now
 }
+
+func (wl *WebhookLog) MarkFailed(errMsg string, nextAttempt time.Time) {
+	wl.Status = WebhookStatusFailed
+	wl.ErrorMessage = &errMsg
+	wl.Attempt++
+	wl.NextAttemptAt = nextAttempt
+	wl.UpdatedAt = time.Now().UTC()
+}

@@ -28,6 +28,7 @@ type Price struct {
 	DeletedAt     *time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	domainEvents  DomainEvents
 }
 
 func NewPrice(productID uuid.UUID, amount int64, currency string, interval BillingInterval, intervalCount int, now time.Time) *Price {
@@ -35,7 +36,8 @@ func NewPrice(productID uuid.UUID, amount int64, currency string, interval Billi
 	if intervalCount <= 0 {
 		intervalCount = 1
 	}
-	return &Price{
+
+	p := &Price{
 		ID:            uuid.New(),
 		PublicID:      pubID,
 		ProductID:     productID,
@@ -47,10 +49,24 @@ func NewPrice(productID uuid.UUID, amount int64, currency string, interval Billi
 		Metadata:      make(map[string]string),
 		CreatedAt:     now.UTC(),
 		UpdatedAt:     now.UTC(),
+		domainEvents:  make(DomainEvents, 0),
 	}
+
+	p.domainEvents = append(p.domainEvents, PriceCreatedEvent{
+		PriceID:       p.ID,
+		PricePubID:    p.PublicID,
+		ProductID:     p.ProductID,
+		Amount:        p.Amount,
+		Currency:      p.Currency,
+		Interval:      p.Interval,
+		IntervalCount: p.IntervalCount,
+		CreatedAt:     now,
+	})
+
+	return p
 }
 
-func (p *Price) NextBillingDate(from time.Time) time.Time {
+func (p Price) NextBillingDate(from time.Time) time.Time {
 	count := p.IntervalCount
 	switch p.Interval {
 	case BillingIntervalDay:
@@ -64,4 +80,28 @@ func (p *Price) NextBillingDate(from time.Time) time.Time {
 	default:
 		return from.AddDate(0, count, 0)
 	}
+}
+
+func (p *Price) Update(amount int64, active bool, now time.Time) {
+	p.Amount = amount
+	p.Active = active
+	p.UpdatedAt = now
+
+	p.domainEvents = append(p.domainEvents, PriceUpdatedEvent{
+		PriceID:       p.ID,
+		PricePubID:    p.PublicID,
+		ProductID:     p.ProductID,
+		Amount:        p.Amount,
+		Currency:      p.Currency,
+		Interval:      p.Interval,
+		IntervalCount: p.IntervalCount,
+		Active:        p.Active,
+		UpdatedAt:     now,
+	})
+}
+
+func (p *Price) GetAndClearEvents() DomainEvents {
+	events := p.domainEvents
+	p.domainEvents = nil
+	return events
 }

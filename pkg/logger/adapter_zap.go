@@ -59,24 +59,25 @@ func newZapLogger(appName, env string, cfg *Config) *zap.Logger {
 			zap.String("env", env),
 		),
 		zap.AddCaller(),
+		zap.AddCallerSkip(1),
 		zap.AddStacktrace(zap.ErrorLevel),
 	)
 }
 
 func (a *ZapAdapter) Debug(msg string, args ...any) {
-	a.sugar.WithOptions(zap.AddCallerSkip(1)).Debugw(msg, args...)
+	a.sugar.Debugw(msg, args...)
 }
 
 func (a *ZapAdapter) Info(msg string, args ...any) {
-	a.sugar.WithOptions(zap.AddCallerSkip(1)).Infow(msg, args...)
+	a.sugar.Infow(msg, args...)
 }
 
 func (a *ZapAdapter) Warn(msg string, args ...any) {
-	a.sugar.WithOptions(zap.AddCallerSkip(1)).Warnw(msg, args...)
+	a.sugar.Warnw(msg, args...)
 }
 
 func (a *ZapAdapter) Error(msg string, args ...any) {
-	a.sugar.WithOptions(zap.AddCallerSkip(1)).Errorw(msg, args...)
+	a.sugar.Errorw(msg, args...)
 }
 
 func (a *ZapAdapter) Ctx(ctx context.Context) Logger {

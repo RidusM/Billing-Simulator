@@ -219,6 +219,22 @@ func (r *WebhookLogRepository) MarkFailed(ctx context.Context, id uuid.UUID, err
 	return nil
 }
 
+func (r *WebhookLogRepository) DeleteOldLogs(ctx context.Context, olderThan time.Duration) (int64, error) {
+	const op = "repository.webhook_log.DeleteOldLogs"
+	sql, args, err := r.storage.Builder.
+		Delete("webhook_logs").
+		Where(squirrel.Expr("created_at <= NOW() - ? * INTERVAL '1 SECOND'", olderThan.Seconds())).
+		ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", op, err)
+	}
+	tag, err := r.executor(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", op, err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (r *WebhookLogRepository) executor(ctx context.Context) postgres.QueryExecuter {
 	if qe, ok := transaction.TxFromCtx(ctx); ok {
 		return qe

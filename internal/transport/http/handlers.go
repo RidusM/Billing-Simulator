@@ -114,6 +114,46 @@ func (h *BillingHandler) CancelSubscription(c *gin.Context) {
 	h.respondJSON(c, http.StatusOK, gin.H{"status": "canceled"})
 }
 
+// @Summary      Advance Time
+// @Description  Moves the virtual clock forward by the specified duration. Triggers batch renewal of subscriptions.
+// @Tags         time
+// @Accept       json
+// @Produce      json
+// @Param        request  body      AdvanceTimeRequest  true  "Duration to advance (e.g. '720h' for 30 days)"
+// @Success      200      {object}  HealthResponse
+// @Failure      400      {object}  ErrorResponse
+// @Router       /v1/time/advance [post]
+func (h *BillingHandler) AdvanceTime(c *gin.Context) {
+	var req AdvanceTimeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.respondError(c, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+	if err := h.svc.AdvanceTime(c.Request.Context(), req.Duration); err != nil {
+		h.handleServiceError(c, err)
+		return
+	}
+	h.respondJSON(c, http.StatusOK, HealthResponse{
+		Status:  "time_advanced",
+		Service: "billing-stripe-sim",
+		Time:    h.svc.GetCurrentTime(),
+	})
+}
+
+// @Summary      Get Current Virtual Time
+// @Description  Returns the current virtual time of the simulator
+// @Tags         time
+// @Produce      json
+// @Success      200  {object}  HealthResponse
+// @Router       /v1/time/current [get]
+func (h *BillingHandler) GetCurrentTime(c *gin.Context) {
+	h.respondJSON(c, http.StatusOK, HealthResponse{
+		Status:  "ok",
+		Service: "billing-stripe-sim",
+		Time:    h.svc.GetCurrentTime(),
+	})
+}
+
 // @Summary      Health Check
 // @Description Return service status and current timestamp. No authentication required.
 // @Tags         system

@@ -36,3 +36,6 @@ CREATE INDEX idx_webhook_logs_trace_id ON webhook_logs(trace_id);
 CREATE INDEX idx_webhook_logs_endpoint_id ON webhook_logs(endpoint_id);
 CREATE INDEX idx_webhook_logs_event_id ON webhook_logs(event_id);
 CREATE INDEX idx_webhook_logs_status ON webhook_logs(status);
+CREATE INDEX idx_webhook_logs_dashboard
+ON webhook_logs(created_at DESC)
+WHERE deleted_at IS NULL;

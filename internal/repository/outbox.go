@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"bill-stripe-sim/internal/entity"
@@ -111,7 +112,6 @@ func (r *OutboxRepository) SaveBatch(ctx context.Context, events []*entity.Outbo
 
 func (r *OutboxRepository) GetUnprocessed(ctx context.Context, limit int, olderThan time.Duration) ([]*entity.OutboxEvent, error) {
 	const op = "repository.outbox.GetUnprocessed"
-
 	sql, args, err := r.storage.
 		Select(
 			"id", "event_type", "aggregate_id", "aggregate_type",
@@ -122,9 +122,12 @@ func (r *OutboxRepository) GetUnprocessed(ctx context.Context, limit int, olderT
 		Where(squirrel.And{
 			squirrel.Eq{"processed": false},
 			squirrel.LtOrEq{"attempt": 5},
-			squirrel.Expr("created_at <= NOW() - ? * INTERVAL '1 SECOND'", olderThan.Seconds()),
+			squirrel.Or{
+				squirrel.Expr("next_attempt_at IS NULL"),
+				squirrel.LtOrEq{"next_attempt_at": time.Now().UTC()},
+			},
 		}).
-		OrderBy("created_at ASC").
+		OrderBy("next_attempt_at ASC NULLS FIRST, created_at ASC").
 		Limit(uint64(limit)).
 		Suffix("FOR UPDATE SKIP LOCKED").
 		ToSql()
@@ -178,15 +181,18 @@ func (r *OutboxRepository) MarkProcessed(ctx context.Context, id uuid.UUID) erro
 	return nil
 }
 
-func (r *OutboxRepository) MarkFailed(ctx context.Context, id uuid.UUID, errorMsg string) error {
+func (r *OutboxRepository) MarkFailed(ctx context.Context, id uuid.UUID, errorMsg string, attempt int) error {
 	const op = "repository.outbox.MarkFailed"
+
+	backoffSeconds := int64(math.Pow(2, float64(attempt)))
+	nextAttemptAt := time.Now().UTC().Add(time.Duration(backoffSeconds) * time.Second)
 
 	sql, args, err := r.storage.Builder.
 		Update("outbox_events").
 		Set("error", errorMsg).
-		Set("attempt", squirrel.Expr("attempt + 1")).
+		Set("attempt", attempt).
+		Set("next_attempt_at", nextAttemptAt).
 		Set("processed_at", squirrel.Expr("NOW()")).
-		// Здесь также можно запланировать экспоненциальный бэкофф для next_attempt_at, если необходимо
 		Where(squirrel.Eq{"id": id}).
 		ToSql()
 	if err != nil {

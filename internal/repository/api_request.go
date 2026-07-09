@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"bill-stripe-sim/internal/entity"
 	"bill-stripe-sim/pkg/storage/postgres"
@@ -98,6 +99,22 @@ func (r *APIRequestRepository) GetRecent(ctx context.Context, limit, offset int)
 		requests = append(requests, &req)
 	}
 	return requests, nil
+}
+
+func (r *APIRequestRepository) DeleteOldRequests(ctx context.Context, olderThan time.Duration) (int64, error) {
+	const op = "repository.api_request.DeleteOldRequests"
+	sql, args, err := r.storage.Builder.
+		Delete("api_requests").
+		Where(squirrel.Expr("created_at <= NOW() - ? * INTERVAL '1 SECOND'", olderThan.Seconds())).
+		ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", op, err)
+	}
+	tag, err := r.executor(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", op, err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (r *APIRequestRepository) executor(ctx context.Context) postgres.QueryExecuter {

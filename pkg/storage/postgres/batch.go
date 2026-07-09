@@ -10,6 +10,9 @@ import (
 
 var ErrInvalidTableName = errors.New("invalid table name type")
 
+// BatchInsert executes a batch of queries.
+// WARNING: If QueryExecuter is a Pool (not a Tx), the batch is NOT atomic.
+// For atomic execution, use a transaction (TxQueryExecuter).
 func BatchInsert(ctx context.Context, qe QueryExecuter, sql string, rows [][]any) error {
 	const op = "storage.postgres.BatchInsert"
 
@@ -35,8 +38,8 @@ func BulkInsert(ctx context.Context, qe QueryExecuter, tableName pgx.Identifier,
 	const op = "storage.postgres.BulkInsert"
 
 	count, err := qe.CopyFrom(ctx, tableName, columns, pgx.CopyFromRows(data))
-    if err != nil {
-        return 0, fmt.Errorf("%s: copy from: %w", op, err)
-    }
-    return count, nil
+	if err != nil {
+		return 0, fmt.Errorf("%s: copy from: %w", op, err)
+	}
+	return count, nil
 }
