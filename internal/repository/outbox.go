@@ -17,8 +17,21 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+type TimeJumpListener func(oldTime, newTime time.Time)
+
+type VirtualClock interface {
+	Now() time.Time
+	OnTimeJump(listener TimeJumpListener)
+	Advance(d time.Duration) error
+	SetTime(t time.Time)
+	Offset() time.Duration
+	Reset()
+	IsAhead() bool
+}
+
 type OutboxRepository struct {
 	storage *postgres.Postgres
+	clock   VirtualClock // ← ДОБАВИТЬ
 }
 
 func NewOutboxRepository(storage *postgres.Postgres) *OutboxRepository {
@@ -112,6 +125,9 @@ func (r *OutboxRepository) SaveBatch(ctx context.Context, events []*entity.Outbo
 
 func (r *OutboxRepository) GetUnprocessed(ctx context.Context, limit int, olderThan time.Duration) ([]*entity.OutboxEvent, error) {
 	const op = "repository.outbox.GetUnprocessed"
+
+	now := r.clock.Now()
+
 	sql, args, err := r.storage.
 		Select(
 			"id", "event_type", "aggregate_id", "aggregate_type",
@@ -124,7 +140,7 @@ func (r *OutboxRepository) GetUnprocessed(ctx context.Context, limit int, olderT
 			squirrel.LtOrEq{"attempt": 5},
 			squirrel.Or{
 				squirrel.Expr("next_attempt_at IS NULL"),
-				squirrel.LtOrEq{"next_attempt_at": time.Now().UTC()},
+				squirrel.LtOrEq{"next_attempt_at": now},
 			},
 		}).
 		OrderBy("next_attempt_at ASC NULLS FIRST, created_at ASC").
@@ -185,7 +201,8 @@ func (r *OutboxRepository) MarkFailed(ctx context.Context, id uuid.UUID, errorMs
 	const op = "repository.outbox.MarkFailed"
 
 	backoffSeconds := int64(math.Pow(2, float64(attempt)))
-	nextAttemptAt := time.Now().UTC().Add(time.Duration(backoffSeconds) * time.Second)
+	now := r.clock.Now() // ← ИСПОЛЬЗОВАТЬ!
+	nextAttemptAt := now.Add(time.Duration(backoffSeconds) * time.Second)
 
 	sql, args, err := r.storage.Builder.
 		Update("outbox_events").
