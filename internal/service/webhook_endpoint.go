@@ -48,7 +48,7 @@ func (s *WebhookEndpointService) CreateEndpoint(
 	var ep *entity.WebhookEndpoint
 	err = s.tm.ExecuteInTransaction(ctx, op, func(ctx context.Context) error {
 		var err error
-		ep, err = entity.NewWebhookEndpoint(customerID, url, prefix, secret, s.clock.Now())
+		ep, err = entity.NewWebhookEndpoint(customerID, s.clock.Now(), url, prefix, secret)
 		if err != nil {
 			return fmt.Errorf("create webhook endpoint entity: %w", err)
 		}

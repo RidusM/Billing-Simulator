@@ -168,7 +168,11 @@ func (bs *BillingService) CancelSubscription(ctx context.Context, subID string, 
 		}
 
 		now := bs.clock.Now()
-		if err := sub.Cancel(now, atPeriodEnd); err != nil {
+		mode := entity.CancelImmediate
+		if atPeriodEnd {
+			mode = entity.CancelAtPeriodEnd
+		}
+		if err := sub.Cancel(mode, now); err != nil {
 			return fmt.Errorf("cancel subscription: %w", err)
 		}
 
