@@ -118,9 +118,11 @@ func (s *PaymentService) ConfirmPayment(ctx context.Context, publicID string) (*
 			return fmt.Errorf("update payment intent: %w", err)
 		}
 		// ОТПРАВЛЯЕМ СОБЫТИЯ
-		events := inv.GetAndClearEvents()
-		if events.HasEvents() {
-			if err := s.dispatcher.Dispatch(ctx, events); err != nil {
+		piEvents := pi.GetAndClearEvents()
+		invEvents := inv.GetAndClearEvents()
+		allEvents := append(piEvents, invEvents...)
+		if allEvents.HasEvents() {
+			if err := s.dispatcher.Dispatch(ctx, allEvents); err != nil {
 				return fmt.Errorf("dispatch events: %w", err)
 			}
 		}

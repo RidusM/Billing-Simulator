@@ -62,7 +62,7 @@ func (s *NotificationService) HandleDomainEvent(
 		return s.handleEvent(ctx, customerID, entity.EventInvoicePaid, payload)
 
 	case "invoice.payment_failed":
-		return s.handleEvent(ctx, customerID, entity.EventInvoiceFailed, payload)
+		return s.handleEvent(ctx, customerID, entity.EventInvoicePaymentFailed, payload)
 
 	default:
 		s.log.Warn("unknown domain event type", "event_type", eventType)

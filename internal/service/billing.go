@@ -31,13 +31,6 @@ type (
 		Update(ctx context.Context, i *entity.Invoice) error // ← ДОБАВИТЬ
 	}
 
-	CustomerRepository interface {
-		Create(ctx context.Context, c *entity.Customer) error
-		GetByID(ctx context.Context, id uuid.UUID) (*entity.Customer, error)
-		GetByPublicID(ctx context.Context, publicID string) (*entity.Customer, error)
-		Update(ctx context.Context, c *entity.Customer) error
-	}
-
 	TransactionManager interface {
 		ExecuteInTransaction(ctx context.Context, txName string, fn func(ctx context.Context) error) error
 	}

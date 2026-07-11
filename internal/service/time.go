@@ -18,7 +18,7 @@ type (
 		Now() time.Time
 		OnTimeJump(listener TimeJumpListener)
 		Advance(d time.Duration) error
-		SetTime(t time.Time)
+		SetTime(t time.Time) error
 		Offset() time.Duration
 		Reset()
 		IsAhead() bool
