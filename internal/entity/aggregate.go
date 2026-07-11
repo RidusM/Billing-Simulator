@@ -5,7 +5,7 @@ type AggregateRoot struct {
 }
 
 func (a *AggregateRoot) Raise(event DomainEvent) {
-	a.domainEvents.Raise(event)
+	a.Raise(event)
 }
 
 func (a *AggregateRoot) Events() DomainEvents {

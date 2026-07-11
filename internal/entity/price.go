@@ -28,7 +28,8 @@ type Price struct {
 	DeletedAt     *time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
-	domainEvents  DomainEvents
+
+	AggregateRoot
 }
 
 func NewPrice(productID uuid.UUID, amount int64, currency string, interval BillingInterval, intervalCount int, now time.Time) (*Price, error) {
@@ -54,10 +55,9 @@ func NewPrice(productID uuid.UUID, amount int64, currency string, interval Billi
 		Metadata:      NewMetadata(),
 		CreatedAt:     utc,
 		UpdatedAt:     utc,
-		domainEvents:  make(DomainEvents, 0),
 	}
 
-	p.domainEvents.Raise(PriceCreatedEvent{
+	p.Raise(PriceCreatedEvent{
 		PriceID:       p.ID,
 		PricePubID:    p.PublicID,
 		ProductID:     p.ProductID,
@@ -104,7 +104,7 @@ func (p *Price) Update(
 	p.Active = active
 	p.UpdatedAt = utc
 
-	p.domainEvents.Raise(PriceUpdatedEvent{
+	p.Raise(PriceUpdatedEvent{
 		PriceID:       p.ID,
 		PricePubID:    p.PublicID,
 		ProductID:     p.ProductID,

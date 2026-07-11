@@ -75,7 +75,7 @@ func NewInvoice(
 		UpdatedAt:            utc,
 	}
 
-	inv.domainEvents.Raise(InvoiceCreatedEvent{
+	inv.Raise(InvoiceCreatedEvent{
 		InvoiceID:         inv.ID,
 		InvoicePubID:      inv.PublicID,
 		CustomerID:        inv.CustomerID,
@@ -128,7 +128,7 @@ func NewRenewalInvoice(
 		UpdatedAt: utc,
 	}
 
-	inv.domainEvents.Raise(InvoiceCreatedEvent{
+	inv.Raise(InvoiceCreatedEvent{
 		InvoiceID:         inv.ID,
 		InvoicePubID:      inv.PublicID,
 		CustomerID:        inv.CustomerID,
@@ -152,6 +152,8 @@ func (i *Invoice) MarkPaid(now time.Time) error {
 		return ErrInvoiceNotPayable
 	}
 
+	
+
 	utc := now.UTC()
 
 	i.Status = InvoiceStatusPaid
@@ -160,7 +162,7 @@ func (i *Invoice) MarkPaid(now time.Time) error {
 	i.AmountRemaining = 0
 	i.UpdatedAt = utc
 
-	i.domainEvents.Raise(InvoicePaidEvent{
+	i.Raise(InvoicePaidEvent{
 		InvoiceID:      i.ID,
 		InvoicePubID:   i.PublicID,
 		CustomerID:     i.CustomerID,
@@ -186,7 +188,7 @@ func (i *Invoice) MarkPaymentFailed(now time.Time, errorCode string, isFinalAtte
 		i.Status = InvoiceStatusOpen
 	}
 
-	i.domainEvents.Raise(InvoicePaymentFailedEvent{
+	i.Raise(InvoicePaymentFailedEvent{
 		InvoiceID:      i.ID,
 		InvoicePubID:   i.PublicID,
 		CustomerID:     i.CustomerID,

@@ -2,6 +2,7 @@ package entity
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,7 +36,8 @@ type PaymentIntent struct {
 	DeletedAt         *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
-	domainEvents      DomainEvents
+
+	AggregateRoot
 }
 
 func NewPaymentIntent(customerID uuid.UUID, invoiceID *uuid.UUID, amount int64, currency string, now time.Time) (*PaymentIntent, error) {
@@ -58,7 +60,6 @@ func NewPaymentIntent(customerID uuid.UUID, invoiceID *uuid.UUID, amount int64, 
 		Metadata:          NewMetadata(),
 		CreatedAt:         utc,
 		UpdatedAt:         utc,
-		domainEvents:      make(DomainEvents, 0),
 	}, nil
 }
 
@@ -69,7 +70,7 @@ func (pi *PaymentIntent) MarkSucceeded(now time.Time) {
 	pi.AmountCaptured = pi.Amount
 	pi.UpdatedAt = utc
 
-	pi.domainEvents.Raise(PaymentIntentSucceededEvent{
+	pi.Raise(PaymentIntentSucceededEvent{
 		PaymentIntentID:    pi.ID,
 		PaymentIntentPubID: pi.PublicID,
 		CustomerID:         pi.CustomerID,
@@ -92,7 +93,7 @@ func (pi *PaymentIntent) MarkFailed(now time.Time, errorCode, declineCode string
 	})
 	pi.LastPaymentError = bytes
 
-	pi.domainEvents.Raise(PaymentIntentFailedEvent{
+	pi.Raise(PaymentIntentFailedEvent{
 		PaymentIntentID:    pi.ID,
 		PaymentIntentPubID: pi.PublicID,
 		CustomerID:         pi.CustomerID,
@@ -107,4 +108,41 @@ func (pi *PaymentIntent) MarkFailed(now time.Time, errorCode, declineCode string
 
 func (pi *PaymentIntent) GetAndClearEvents() DomainEvents {
 	return pi.domainEvents.ClearAndReturn()
+}
+
+// ✅ ДОБАВИТЬ В payment_intent.go:
+func (pi *PaymentIntent) Capture(amount int64, now time.Time) error {
+	if pi.Status != PaymentIntentStatusRequiresCapture &&
+		pi.Status != PaymentIntentStatusProcessing {
+		return fmt.Errorf("cannot capture payment in status %s", pi.Status)
+	}
+
+	if amount <= 0 || amount > (pi.Amount-pi.AmountCaptured) {
+		return ErrInvalidCaptureAmount
+	}
+
+	utc := now.UTC()
+	pi.AmountCaptured += amount
+	pi.UpdatedAt = utc
+
+	if pi.AmountCaptured == pi.Amount {
+		pi.Status = PaymentIntentStatusSucceeded
+		pi.domainEvents.Raise(PaymentIntentSucceededEvent{
+			PaymentIntentID:    pi.ID,
+			PaymentIntentPubID: pi.PublicID,
+			CustomerID:         pi.CustomerID,
+			InvoiceID:          pi.InvoiceID,
+			Amount:             pi.Amount,
+			Currency:           pi.Currency,
+			SucceededAt:        utc,
+		})
+	}
+
+	return nil
+}
+
+func (pi *PaymentIntent) CanCapture() bool {
+	return pi.AmountCaptured < pi.Amount &&
+		(pi.Status == PaymentIntentStatusRequiresCapture ||
+			pi.Status == PaymentIntentStatusProcessing)
 }

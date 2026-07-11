@@ -28,17 +28,17 @@ func NewProduct(name, description string, now time.Time) (*Product, error) {
 	utc := now.UTC()
 
 	p := &Product{
-		ID:           uuid.New(),
-		PublicID:     pubID,
-		Name:         name,
-		Description:  description,
-		Active:       true,
-		Metadata:     NewMetadata(),
-		CreatedAt:    utc,
-		UpdatedAt:    utc,
+		ID:          uuid.New(),
+		PublicID:    pubID,
+		Name:        name,
+		Description: description,
+		Active:      true,
+		Metadata:    NewMetadata(),
+		CreatedAt:   utc,
+		UpdatedAt:   utc,
 	}
 
-	p.domainEvents.Raise(ProductCreatedEvent{
+	p.Raise(ProductCreatedEvent{
 		ProductID:    p.ID,
 		ProductPubID: p.PublicID,
 		Name:         p.Name,
@@ -69,7 +69,7 @@ func (p *Product) Update(
 	p.Active = active
 	p.UpdatedAt = utc
 
-	p.domainEvents.Raise(ProductUpdatedEvent{
+	p.Raise(ProductUpdatedEvent{
 		ProductID:    p.ID,
 		ProductPubID: p.PublicID,
 		Name:         p.Name,

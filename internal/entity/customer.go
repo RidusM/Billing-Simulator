@@ -59,7 +59,7 @@ func (c *Customer) UpdateEmail(email string, now time.Time) {
 	c.UpdatedAt = utc
 
 	// ИСПРАВЛЕНО: Теперь бэкенд пользователя мгновенно узнает об обновлении почты!
-	c.domainEvents.Raise(CustomerUpdatedEvent{
+	c.Raise(CustomerUpdatedEvent{
 		CustomerID:    c.ID,
 		CustomerPubID: c.PublicID,
 		Email:         c.Email,
@@ -77,7 +77,7 @@ func (c *Customer) UpdateName(name string, now time.Time) {
 	c.UpdatedAt = utc
 
 	// ИСПРАВЛЕНО: Поднимаем событие при смене имени
-	c.domainEvents.Raise(CustomerUpdatedEvent{
+	c.Raise(CustomerUpdatedEvent{
 		CustomerID:    c.ID,
 		CustomerPubID: c.PublicID,
 		Email:         c.Email,

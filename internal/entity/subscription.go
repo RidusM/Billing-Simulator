@@ -9,6 +9,7 @@ import (
 )
 
 type SubscriptionStatus string
+type SubscriptionCancelMode int
 
 const (
 	SubscriptionStatusActive     SubscriptionStatus = "active"
@@ -17,6 +18,11 @@ const (
 	SubscriptionStatusUnpaid     SubscriptionStatus = "unpaid"
 	SubscriptionStatusTrialing   SubscriptionStatus = "trialing"
 	SubscriptionStatusIncomplete SubscriptionStatus = "incomplete"
+)
+
+const (
+	CancelImmediate SubscriptionCancelMode = iota
+	CancelAtPeriodEnd
 )
 
 type Subscription struct {
@@ -39,7 +45,8 @@ type Subscription struct {
 	DeletedAt           *time.Time
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
-	domainEvents        DomainEvents
+
+	AggregateRoot
 }
 
 func NewSubscription(customerID, priceID uuid.UUID, customerPubID, pricePubID string, periodStart, periodEnd time.Time, now time.Time) (*Subscription, error) {
@@ -64,10 +71,9 @@ func NewSubscription(customerID, priceID uuid.UUID, customerPubID, pricePubID st
 		Metadata:           NewMetadata(),
 		CreatedAt:          utc,
 		UpdatedAt:          utc,
-		domainEvents:       make(DomainEvents, 0),
 	}
 
-	s.domainEvents.Raise(SubscriptionCreatedEvent{
+	s.Raise(SubscriptionCreatedEvent{
 		SubscriptionID:    s.ID,
 		SubscriptionPubID: s.PublicID,
 		CustomerID:        s.CustomerID,
@@ -83,24 +89,39 @@ func NewSubscription(customerID, priceID uuid.UUID, customerPubID, pricePubID st
 	return s, nil
 }
 
-func (s *Subscription) Cancel(now time.Time, atPeriodEnd bool) error {
+func (s *Subscription) Cancel(mode SubscriptionCancelMode, now time.Time) error {
 	if s.Status == SubscriptionStatusCanceled {
 		return ErrSubscriptionAlreadyCanceled
 	}
 
-	if atPeriodEnd {
-		if s.CancelAtPeriodEnd {
-			return nil
-		}
+	utc := now.UTC()
 
+	switch mode {
+	case CancelImmediate:
+		s.Status = SubscriptionStatusCanceled
+		s.CanceledAt = &utc
+		s.CancelAtPeriodEnd = false
+
+		s.Raise(SubscriptionCanceledEvent{
+			SubscriptionID:    s.ID,
+			SubscriptionPubID: s.PublicID,
+			CustomerID:        s.CustomerID,
+			CustomerPubID:     s.CustomerPublicID,
+			Status:            s.Status,
+			CanceledAt:        utc,
+			AtPeriodEnd:       false,
+		})
+
+	case CancelAtPeriodEnd:
 		s.CancelAtPeriodEnd = true
 		s.markUpdated(now)
+		// status остаётся active до конца периода
 
-		return nil
+	default:
+		return fmt.Errorf("unknown cancel mode: %v", mode)
 	}
 
-	s.MarkCanceled(now)
-
+	s.UpdatedAt = utc
 	return nil
 }
 
@@ -109,7 +130,7 @@ func (s *Subscription) markUpdated(now time.Time) {
 
 	s.UpdatedAt = utc
 
-	s.domainEvents.Raise(SubscriptionUpdatedEvent{
+	s.Raise(SubscriptionUpdatedEvent{
 		SubscriptionID:    s.ID,
 		SubscriptionPubID: s.PublicID,
 		CustomerID:        s.CustomerID,
@@ -120,27 +141,70 @@ func (s *Subscription) markUpdated(now time.Time) {
 	})
 }
 
+// ✅ ПРАВИЛЬНОЕ:
 func (s *Subscription) Renew(now time.Time, price *Price) (*Invoice, error) {
-
-	if s.Status != SubscriptionStatusActive &&
-		s.Status != SubscriptionStatusTrialing {
-		return nil, ErrSubscriptionNotActive
+	// Проверяем, может ли подписка быть обновлена
+	if s.Status == SubscriptionStatusCanceled {
+		return nil, ErrSubscriptionAlreadyCanceled
 	}
 
-	return NewRenewalInvoice(s, price, now)
+	if s.Status == SubscriptionStatusUnpaid {
+		return nil, ErrSubscriptionUnpaid
+	}
+
+	utc := now.UTC()
+
+	// Если текущий период истёк, двигаем его вперёд
+	if utc.After(s.CurrentPeriodEnd) {
+		// Сколько полных периодов пропущено?
+		periodDuration := s.CurrentPeriodEnd.Sub(s.CurrentPeriodStart)
+		missedPeriods := utc.Sub(s.CurrentPeriodEnd) / periodDuration
+
+		s.CurrentPeriodStart = s.CurrentPeriodEnd.Add(
+			periodDuration * time.Duration(missedPeriods),
+		)
+	} else {
+		s.CurrentPeriodStart = s.CurrentPeriodEnd
+	}
+
+	s.CurrentPeriodEnd = price.NextBillingDate(s.CurrentPeriodStart)
+	s.NextBillingAt = s.CurrentPeriodEnd
+	s.UpdatedAt = utc
+
+	// Создаём инвойс
+	inv, err := NewRenewalInvoice(s, price, utc)
+	if err != nil {
+		return nil, err
+	}
+
+	s.domainEvents.Raise(SubscriptionRenewedEvent{
+		SubscriptionID:    s.ID,
+		SubscriptionPubID: s.PublicID,
+		CustomerID:        s.CustomerID,
+		CustomerPubID:     s.CustomerPublicID,
+		InvoiceID:         inv.ID,
+		InvoicePubID:      inv.PublicID,
+		InvoiceAmount:     inv.Amount,
+		InvoiceCurrency:   inv.Currency,
+		InvoiceStatus:     inv.Status,
+		NewPeriodEnd:      s.CurrentPeriodEnd,
+		RenewedAt:         utc,
+	})
+
+	return inv, nil
 }
 
 // ConfirmRenewal вызывается сервисом ТОЛЬКО когда платеж за инвойс успешен
 func (s *Subscription) ConfirmRenewal(newPeriodEnd time.Time, invoice *Invoice, now time.Time) {
 	utc := now.UTC()
-	
+
 	s.CurrentPeriodStart = s.CurrentPeriodEnd
 	s.CurrentPeriodEnd = newPeriodEnd
 	s.NextBillingAt = newPeriodEnd
 	s.Status = SubscriptionStatusActive
 	s.UpdatedAt = utc
 
-	s.domainEvents.Raise(SubscriptionRenewedEvent{
+	s.Raise(SubscriptionRenewedEvent{
 		SubscriptionID:    s.ID,
 		SubscriptionPubID: s.PublicID,
 		CustomerID:        s.CustomerID,
@@ -188,7 +252,7 @@ func (s *Subscription) MarkCanceled(now time.Time) {
 	s.CanceledAt = &utc
 	s.UpdatedAt = utc
 
-	s.domainEvents.Raise(SubscriptionCanceledEvent{
+	s.Raise(SubscriptionCanceledEvent{
 		SubscriptionID:    s.ID,
 		SubscriptionPubID: s.PublicID,
 		CustomerID:        s.CustomerID,
