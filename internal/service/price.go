@@ -53,7 +53,11 @@ func (s *PriceService) CreatePrice(
 	var price *entity.Price
 
 	err := s.tm.ExecuteInTransaction(ctx, op, func(ctx context.Context) error {
-		price = entity.NewPrice(productID, amount, currency, interval, intervalCount, s.clock.Now())
+		var err error
+		price, err = entity.NewPrice(productID, amount, currency, interval, intervalCount, s.clock.Now())
+		if err != nil {
+			return fmt.Errorf("create price entity: %w", err)
+		}
 		return s.prices.Create(ctx, price)
 	})
 

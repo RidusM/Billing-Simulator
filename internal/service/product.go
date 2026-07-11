@@ -46,7 +46,11 @@ func (s *ProductService) CreateProduct(ctx context.Context, name, description st
 	var product *entity.Product
 
 	err := s.tm.ExecuteInTransaction(ctx, op, func(ctx context.Context) error {
-		product = entity.NewProduct(name, description, s.clock.Now())
+		var err error
+		product, err = entity.NewProduct(name, description, s.clock.Now())
+		if err != nil {
+			return fmt.Errorf("create product entity: %w", err)
+		}
 		return s.products.Create(ctx, product)
 	})
 

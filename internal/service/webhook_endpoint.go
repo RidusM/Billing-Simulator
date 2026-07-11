@@ -47,7 +47,12 @@ func (s *WebhookEndpointService) CreateEndpoint(
 
 	var ep *entity.WebhookEndpoint
 	err = s.tm.ExecuteInTransaction(ctx, op, func(ctx context.Context) error {
-		ep = entity.NewWebhookEndpoint(customerID, url, prefix, secret, s.clock.Now())
+		var err error
+		ep, err = entity.NewWebhookEndpoint(customerID, url, prefix, secret, s.clock.Now())
+		if err != nil {
+			return fmt.Errorf("create webhook endpoint entity: %w", err)
+		}
+
 		if len(enabledEvents) > 0 {
 			ep.EnabledEvents = enabledEvents
 		}
@@ -73,10 +78,10 @@ func (s *WebhookEndpointService) DeleteEndpoint(ctx context.Context, id uuid.UUI
 // plus короткий prefix (первые 8 символов) для отображения в UI без раскрытия полного секрета.
 func generateWebhookSecret() (secret, prefix string, err error) {
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil { // Убрана лишняя запятая
+	if _, err := rand.Read(b); err != nil {
 		return "", "", fmt.Errorf("generate secret: %w", err)
 	}
-	secret = "whsec_" + hex.EncodeToString(b) // Добавлено подчеркивание, как в Stripe
-	prefix = secret[:14]                      // "whsec_" (6) + 8 hex-символов = 14
+	secret = "whsec_" + hex.EncodeToString(b)
+	prefix = secret[:14] // "whsec_" (6) + 8 hex-символов = 14
 	return secret, prefix, nil
 }

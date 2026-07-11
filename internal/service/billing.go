@@ -26,9 +26,9 @@ type (
 
 	InvoiceRepository interface {
 		Create(ctx context.Context, i *entity.Invoice) error
-		GetByID(ctx context.Context, id uuid.UUID) (*entity.Invoice, error) // ← ДОБАВИТЬ
+		GetByID(ctx context.Context, id uuid.UUID) (*entity.Invoice, error)
 		GetByPublicID(ctx context.Context, publicID string) (*entity.Invoice, error)
-		Update(ctx context.Context, i *entity.Invoice) error // ← ДОБАВИТЬ
+		Update(ctx context.Context, i *entity.Invoice) error
 	}
 
 	CustomerRepository interface {
@@ -36,6 +36,13 @@ type (
 		GetByID(ctx context.Context, id uuid.UUID) (*entity.Customer, error)
 		GetByPublicID(ctx context.Context, publicID string) (*entity.Customer, error)
 		Update(ctx context.Context, c *entity.Customer) error
+	}
+
+	PriceRepository interface {
+		Create(ctx context.Context, p *entity.Price) error
+		GetByID(ctx context.Context, id uuid.UUID) (*entity.Price, error)
+		GetByPublicID(ctx context.Context, publicID string) (*entity.Price, error)
+		Update(ctx context.Context, p *entity.Price) error
 	}
 
 	TransactionManager interface {
@@ -46,7 +53,7 @@ type (
 type BillingService struct {
 	subscriptions SubscriptionRepository
 	invoices      InvoiceRepository
-	customers     CustomerRepository // ← ДОБАВИТЬ
+	customers     CustomerRepository
 	price         PriceRepository
 	dispatcher    *EventDispatcher
 	tm            TransactionManager
@@ -58,7 +65,7 @@ type BillingService struct {
 func NewBillingService(
 	subscriptions SubscriptionRepository,
 	invoices InvoiceRepository,
-	customers CustomerRepository, // ← ДОБАВИТЬ
+	customers CustomerRepository,
 	price PriceRepository,
 	dispatcher *EventDispatcher,
 	tm TransactionManager,
@@ -69,7 +76,7 @@ func NewBillingService(
 	return &BillingService{
 		subscriptions: subscriptions,
 		invoices:      invoices,
-		customers:     customers, // ← ДОБАВИТЬ
+		customers:     customers,
 		price:         price,
 		dispatcher:    dispatcher,
 		tm:            tm,
@@ -79,7 +86,6 @@ func NewBillingService(
 	}
 }
 
-// ✅ ПРАВИЛЬНОЕ:
 func (bs *BillingService) CreateSubscription(
 	ctx context.Context,
 	customerID uuid.UUID,
@@ -108,7 +114,7 @@ func (bs *BillingService) CreateSubscription(
 		sub, err = entity.NewSubscription(
 			customerID,
 			price.ID,
-			customer.PublicID, // ← Теперь есть!
+			customer.PublicID,
 			price.PublicID,
 			now,
 			nextBilling,
@@ -125,7 +131,7 @@ func (bs *BillingService) CreateSubscription(
 		// Создаём инвойс
 		inv, err = entity.NewInvoice(
 			customerID,
-			customer.PublicID, // ← Используем customer.PublicID
+			customer.PublicID,
 			&sub.ID,
 			&sub.PublicID,
 			price.Amount,
@@ -136,7 +142,6 @@ func (bs *BillingService) CreateSubscription(
 			return fmt.Errorf("create invoice: %w", err)
 		}
 
-		// MarkPaid корректно оплачивает инвойс полностью
 		if err := inv.MarkPaid(now); err != nil {
 			return fmt.Errorf("mark invoice paid: %w", err)
 		}
