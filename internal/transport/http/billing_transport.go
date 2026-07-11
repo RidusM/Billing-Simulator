@@ -19,9 +19,12 @@ type BillingService interface {
 	CreateSubscription(ctx context.Context, customerID uuid.UUID, priceID string) (*entity.Subscription, error)
 	CancelSubscription(ctx context.Context, subID string, atPeriodEnd bool) error // ← ДОБАВЛЕНО atPeriodEnd
 	GetSubscription(ctx context.Context, subID uuid.UUID) (*entity.Subscription, error)
-	// Дополнительно для Time Travel:
+
 	AdvanceTime(ctx context.Context, d time.Duration) error
 	GetCurrentTime() time.Time
+
+	GetPaymentSuccessRate() float64
+	SetPaymentSuccessRate(rate float64) error
 }
 
 type BillingHandler struct {

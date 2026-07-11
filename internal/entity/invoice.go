@@ -21,9 +21,9 @@ type Invoice struct {
 	ID                   uuid.UUID
 	PublicID             string
 	SubscriptionID       *uuid.UUID
-	SubscriptionPublicID *string // ← Добавлено для событий
+	SubscriptionPublicID *string
 	CustomerID           uuid.UUID
-	CustomerPublicID     string // ← Добавлено для событий
+	CustomerPublicID     string
 	Amount               int64
 	AmountPaid           int64
 	AmountRemaining      int64
@@ -46,9 +46,9 @@ type Invoice struct {
 
 func NewInvoice(
 	customerID uuid.UUID,
-	customerPublicID string, // Добавлено
+	customerPublicID string,
 	subscriptionID *uuid.UUID,
-	subscriptionPublicID *string, // Добавлено
+	subscriptionPublicID *string,
 	amount int64,
 	currency string,
 	now time.Time,
@@ -59,20 +59,20 @@ func NewInvoice(
 		ID:                   uuid.New(),
 		PublicID:             pID,
 		CustomerID:           customerID,
-		CustomerPublicID:     customerPublicID, // Заполняем сразу
+		CustomerPublicID:     customerPublicID,
 		SubscriptionID:       subscriptionID,
-		SubscriptionPublicID: subscriptionPublicID, // Заполняем сразу
+		SubscriptionPublicID: subscriptionPublicID,
 		Amount:               amount,
 		AmountRemaining:      amount,
 		Currency:             currency,
 		Status:               InvoiceStatusOpen,
 		Metadata:             make(map[string]string),
-		CreatedAt:            now,
-		UpdatedAt:            now,
+		CreatedAt:            now.UTC(),
+		UpdatedAt:            now.UTC(),
 		domainEvents:         make(DomainEvents, 0),
 	}
 
-	inv.domainEvents = append(inv.domainEvents, InvoiceCreatedEvent{
+	inv.domainEvents.Raise(InvoiceCreatedEvent{
 		InvoiceID:         inv.ID,
 		InvoicePubID:      inv.PublicID,
 		CustomerID:        inv.CustomerID,
@@ -82,7 +82,7 @@ func NewInvoice(
 		Amount:            inv.Amount,
 		Currency:          inv.Currency,
 		Status:            inv.Status,
-		CreatedAt:         now,
+		CreatedAt:         now.UTC(),
 	})
 
 	return inv
@@ -99,10 +99,9 @@ func (i *Invoice) MarkPaid(now time.Time) error {
 	i.Status = InvoiceStatusPaid
 	i.AmountPaid = i.Amount
 	i.AmountRemaining = 0
-	i.UpdatedAt = now
+	i.UpdatedAt = now.UTC()
 
-	// Заполняем событие ПОЛНОЙ информацией
-	i.domainEvents = append(i.domainEvents, InvoicePaidEvent{
+	i.domainEvents.Raise(InvoicePaidEvent{
 		InvoiceID:      i.ID,
 		InvoicePubID:   i.PublicID,
 		CustomerID:     i.CustomerID,
@@ -110,7 +109,7 @@ func (i *Invoice) MarkPaid(now time.Time) error {
 		SubscriptionID: i.SubscriptionID,
 		Amount:         i.Amount,
 		Currency:       i.Currency,
-		PaidAt:         now,
+		PaidAt:         now.UTC(),
 	})
 
 	return nil
@@ -118,8 +117,9 @@ func (i *Invoice) MarkPaid(now time.Time) error {
 
 func (i *Invoice) MarkPaymentFailed(now time.Time, errorCode string, isFinalAttempt bool) error {
 	i.AttemptCount++
-	i.AttemptedAt = &now
-	i.UpdatedAt = now
+	utcNow := now.UTC()
+	i.AttemptedAt = &utcNow
+	i.UpdatedAt = utcNow
 
 	if isFinalAttempt {
 		i.Status = InvoiceStatusUncollectible
@@ -127,7 +127,7 @@ func (i *Invoice) MarkPaymentFailed(now time.Time, errorCode string, isFinalAtte
 		i.Status = InvoiceStatusOpen
 	}
 
-	i.domainEvents = append(i.domainEvents, InvoicePaymentFailedEvent{
+	i.domainEvents.Raise(InvoicePaymentFailedEvent{
 		InvoiceID:      i.ID,
 		InvoicePubID:   i.PublicID,
 		CustomerID:     i.CustomerID,
@@ -136,7 +136,7 @@ func (i *Invoice) MarkPaymentFailed(now time.Time, errorCode string, isFinalAtte
 		Amount:         i.Amount,
 		Currency:       i.Currency,
 		ErrorCode:      errorCode,
-		FailedAt:       now,
+		FailedAt:       utcNow,
 	})
 
 	return nil
@@ -146,9 +146,8 @@ func (i *Invoice) MarkPastDue(now time.Time) error {
 	if i.Status != InvoiceStatusOpen {
 		return fmt.Errorf("invoice is not in open state")
 	}
-	i.Status = InvoiceStatusOpen // Оставляем open, но помечаем как просроченный
-	i.UpdatedAt = now
-	// Опционально: можно добавить событие InvoiceOverdueEvent
+	i.Status = InvoiceStatusOpen
+	i.UpdatedAt = now.UTC()
 	return nil
 }
 
@@ -157,7 +156,5 @@ func (i *Invoice) CanBePaid() bool {
 }
 
 func (i *Invoice) GetAndClearEvents() DomainEvents {
-	events := i.domainEvents
-	i.domainEvents = nil
-	return events
+	return i.domainEvents.ClearAndReturn()
 }

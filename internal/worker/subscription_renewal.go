@@ -10,6 +10,8 @@ import (
 )
 
 type SubscriptionRepository interface {
+	GetByInvoiceID(ctx context.Context, invoiceID uuid.UUID) (*entity.Subscription, error) // ← ДОБАВИТЬ
+	Update(ctx context.Context, s *entity.Subscription) error
 	GetActiveForRenewal(ctx context.Context, currentTime time.Time) ([]*entity.Subscription, error)
 }
 

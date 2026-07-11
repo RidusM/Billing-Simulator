@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(C:\\Users\\esandalov\\.craft-agent\\workspaces\\kodik-2\\sessions\\260709-привет-погляди-на-все-эти-файлы-и-скажи-можно-ли\\attachments/**)"
+    ]
+  },
+  "$version": 4
+}

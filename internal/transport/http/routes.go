@@ -24,11 +24,10 @@ func (h *BillingHandler) setupRoutes() {
 	h.router.GET("/healthz", h.Health)
 
 	v1 := h.router.Group("/v1")
-	v1.Use()
 	{
 		v1.POST("/customers", h.CreateCustomer)
+
 		subs := v1.Group("/subscriptions")
-		subs.Use()
 		{
 			subs.POST("/", h.CreateSubscription)
 			subs.GET("/:id", h.GetSubscription)
@@ -38,6 +37,13 @@ func (h *BillingHandler) setupRoutes() {
 		{
 			time.POST("/advance", h.AdvanceTime)
 			time.GET("/current", h.GetCurrentTime)
+		}
+
+		// ← Добавляем роуты для управления симуляцией
+		simulation := v1.Group("/simulation")
+		{
+			simulation.GET("/payment-rate", h.GetPaymentSuccessRate)
+			simulation.POST("/payment-rate", h.SetPaymentSuccessRate)
 		}
 	}
 

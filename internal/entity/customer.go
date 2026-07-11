@@ -28,18 +28,17 @@ func NewCustomer(email, name string, now time.Time) *Customer {
 		Email:        email,
 		Name:         name,
 		Metadata:     make(map[string]string),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		CreatedAt:    now.UTC(),
+		UpdatedAt:    now.UTC(),
 		domainEvents: make(DomainEvents, 0),
 	}
 
-	// Заполняем событие ПОЛНОЙ информацией
-	c.domainEvents = append(c.domainEvents, CustomerCreatedEvent{
+	c.domainEvents.Raise(CustomerCreatedEvent{
 		CustomerID:    c.ID,
 		CustomerPubID: c.PublicID,
 		Email:         c.Email,
 		Name:          c.Name,
-		CreatedAt:     now,
+		CreatedAt:     now.UTC(),
 	})
 
 	return c
@@ -47,16 +46,14 @@ func NewCustomer(email, name string, now time.Time) *Customer {
 
 func (c *Customer) UpdateEmail(email string, now time.Time) {
 	c.Email = email
-	c.UpdatedAt = now
+	c.UpdatedAt = now.UTC()
 }
 
 func (c *Customer) UpdateName(name string, now time.Time) {
 	c.Name = name
-	c.UpdatedAt = now
+	c.UpdatedAt = now.UTC()
 }
 
 func (c *Customer) GetAndClearEvents() DomainEvents {
-	events := c.domainEvents
-	c.domainEvents = nil
-	return events
+	return c.domainEvents.ClearAndReturn()
 }

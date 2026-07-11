@@ -21,27 +21,30 @@ type PaymentIntentRepository interface {
 type PaymentService struct {
 	paymentIntents PaymentIntentRepository
 	invoices       InvoiceRepository
-	dispatcher     *EventDispatcher // ← ДОБАВЛЕНО
+	dispatcher     *EventDispatcher
 	tm             TransactionManager
 	log            logger.Logger
 	clock          VirtualClock
+	rateManager    *PaymentRateManager // ← Добавляем
 }
 
 func NewPaymentService(
 	paymentIntents PaymentIntentRepository,
 	invoices InvoiceRepository,
-	dispatcher *EventDispatcher, // ← ДОБАВЛЕНО
+	dispatcher *EventDispatcher,
 	tm TransactionManager,
 	log logger.Logger,
 	clock VirtualClock,
+	rateManager *PaymentRateManager, // ← Добавляем
 ) *PaymentService {
 	return &PaymentService{
 		paymentIntents: paymentIntents,
 		invoices:       invoices,
-		dispatcher:     dispatcher, // ← ДОБАВЛЕНО
+		dispatcher:     dispatcher,
 		tm:             tm,
 		log:            log,
 		clock:          clock,
+		rateManager:    rateManager, // ← Добавляем
 	}
 }
 
@@ -68,10 +71,8 @@ func (s *PaymentService) CreatePaymentIntent(ctx context.Context, invoiceID uuid
 
 func (s *PaymentService) ConfirmPayment(ctx context.Context, publicID string) (*entity.PaymentIntent, error) {
 	const op = "service.payment.ConfirmPayment"
-
 	var pi *entity.PaymentIntent
 	var inv *entity.Invoice
-
 	err := s.tm.ExecuteInTransaction(ctx, op, func(ctx context.Context) error {
 		var err error
 		pi, err = s.paymentIntents.GetByPublicID(ctx, publicID)
@@ -79,25 +80,25 @@ func (s *PaymentService) ConfirmPayment(ctx context.Context, publicID string) (*
 			return fmt.Errorf("get payment intent: %w", err)
 		}
 
-		// Симулировать платеж
-		if simulatePayment() == entity.InvoiceStatusPaid {
-			pi.MarkSucceeded()
+		// ← ИСПРАВЛЕНО: передаем successRate (по умолчанию 0.85)
+		if simulatePayment(ctx, s.rateManager) == entity.InvoiceStatusPaid {
+			// ← ИСПРАВЛЕНО: передаем now
+			pi.MarkSucceeded(s.clock.Now())
 
 			// Обновить инвойс
 			inv, err = s.invoices.GetByID(ctx, *pi.InvoiceID)
 			if err != nil {
 				return fmt.Errorf("get invoice: %w", err)
 			}
-
 			if err := inv.MarkPaid(s.clock.Now()); err != nil {
 				return fmt.Errorf("mark invoice paid: %w", err)
 			}
-
 			if err := s.invoices.Update(ctx, inv); err != nil {
 				return fmt.Errorf("update invoice: %w", err)
 			}
 		} else {
-			pi.MarkFailed("card_declined", "insufficient_funds")
+			// ← ИСПРАВЛЕНО: передаем now
+			pi.MarkFailed(s.clock.Now(), "card_declined", "insufficient_funds")
 
 			// Также нужно обновить инвойс как failed
 			inv, err = s.invoices.GetByID(ctx, *pi.InvoiceID)
@@ -105,19 +106,21 @@ func (s *PaymentService) ConfirmPayment(ctx context.Context, publicID string) (*
 				return fmt.Errorf("get invoice: %w", err)
 			}
 
-			if err := inv.MarkPaymentFailed(s.clock.Now(), "card_declined"); err != nil {
+			// ← ИСПРАВЛЕНО: сначала инкрементируем AttemptCount
+			inv.AttemptCount++
+			isFinalAttempt := inv.AttemptCount >= 3
+
+			// ← ИСПРАВЛЕНО: передаем isFinalAttempt
+			if err := inv.MarkPaymentFailed(s.clock.Now(), "card_declined", isFinalAttempt); err != nil {
 				return fmt.Errorf("mark payment failed: %w", err)
 			}
-
 			if err := s.invoices.Update(ctx, inv); err != nil {
 				return fmt.Errorf("update invoice: %w", err)
 			}
 		}
-
 		if err := s.paymentIntents.Update(ctx, pi); err != nil {
 			return fmt.Errorf("update payment intent: %w", err)
 		}
-
 		// ОТПРАВЛЯЕМ СОБЫТИЯ
 		events := inv.GetAndClearEvents()
 		if events.HasEvents() {
@@ -125,13 +128,10 @@ func (s *PaymentService) ConfirmPayment(ctx context.Context, publicID string) (*
 				return fmt.Errorf("dispatch events: %w", err)
 			}
 		}
-
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
-
 	return pi, nil
 }

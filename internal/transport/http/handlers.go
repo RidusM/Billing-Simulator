@@ -154,6 +154,44 @@ func (h *BillingHandler) GetCurrentTime(c *gin.Context) {
 	})
 }
 
+// @Summary      Get Payment Success Rate
+// @Description  Returns current payment success rate for simulation
+// @Tags         simulation
+// @Produce      json
+// @Success      200  {object}  map[string]float64 "{"success_rate": 0.85}"
+// @Router       /v1/simulation/payment-rate [get]
+func (h *BillingHandler) GetPaymentSuccessRate(c *gin.Context) {
+	rate := h.svc.GetPaymentSuccessRate()
+	h.respondJSON(c, http.StatusOK, gin.H{"success_rate": rate})
+}
+
+// @Summary      Set Payment Success Rate
+// @Description  Sets payment success rate for simulation (0.0 - 1.0)
+// @Tags         simulation
+// @Accept       json
+// @Produce      json
+// @Param        request  body      SetPaymentRateRequest  true  "Success rate (0.0 - 1.0)"
+// @Success      200      {object}  map[string]float64 "{"success_rate": 0.85}"
+// @Failure      400      {object}  ErrorResponse
+// @Router       /v1/simulation/payment-rate [post]
+func (h *BillingHandler) SetPaymentSuccessRate(c *gin.Context) {
+	var req struct {
+		SuccessRate float64 `json:"success_rate" binding:"required,gte=0,lte=1"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.respondError(c, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+
+	if err := h.svc.SetPaymentSuccessRate(req.SuccessRate); err != nil {
+		h.respondError(c, http.StatusBadRequest, "invalid_rate", err.Error(), nil)
+		return
+	}
+
+	h.respondJSON(c, http.StatusOK, gin.H{"success_rate": req.SuccessRate})
+}
+
 // @Summary      Health Check
 // @Description Return service status and current timestamp. No authentication required.
 // @Tags         system

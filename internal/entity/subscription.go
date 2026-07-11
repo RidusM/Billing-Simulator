@@ -22,9 +22,9 @@ type Subscription struct {
 	ID                  uuid.UUID
 	PublicID            string
 	CustomerID          uuid.UUID
-	CustomerPublicID    string // ← Добавлено для событий
+	CustomerPublicID    string
 	PriceID             uuid.UUID
-	PricePublicID       string // ← Добавлено для событий
+	PricePublicID       string
 	Status              SubscriptionStatus
 	CurrentPeriodStart  time.Time
 	CurrentPeriodEnd    time.Time
@@ -50,12 +50,12 @@ func NewSubscription(customerID, priceID uuid.UUID, periodStart, periodEnd time.
 		CustomerID:         customerID,
 		PriceID:            priceID,
 		Status:             SubscriptionStatusActive,
-		CurrentPeriodStart: periodStart,
-		CurrentPeriodEnd:   periodEnd,
-		NextBillingAt:      periodEnd,
+		CurrentPeriodStart: periodStart.UTC(),
+		CurrentPeriodEnd:   periodEnd.UTC(),
+		NextBillingAt:      periodEnd.UTC(),
 		Metadata:           make(map[string]string),
-		CreatedAt:          now,
-		UpdatedAt:          now,
+		CreatedAt:          now.UTC(),
+		UpdatedAt:          now.UTC(),
 		domainEvents:       make(DomainEvents, 0),
 	}
 }
@@ -79,10 +79,9 @@ func (s *Subscription) Renew(now time.Time, price *Price) (*Invoice, error) {
 	s.CurrentPeriodEnd = price.NextBillingDate(s.CurrentPeriodEnd)
 	s.NextBillingAt = s.CurrentPeriodEnd
 	s.Status = SubscriptionStatusActive
-	s.UpdatedAt = now
+	s.UpdatedAt = now.UTC()
 
-	// Заполняем событие ПОЛНОЙ информацией
-	s.domainEvents = append(s.domainEvents, SubscriptionRenewedEvent{
+	s.domainEvents.Raise(SubscriptionRenewedEvent{
 		SubscriptionID:    s.ID,
 		SubscriptionPubID: s.PublicID,
 		CustomerID:        s.CustomerID,
@@ -93,7 +92,7 @@ func (s *Subscription) Renew(now time.Time, price *Price) (*Invoice, error) {
 		InvoiceCurrency:   invoice.Currency,
 		InvoiceStatus:     invoice.Status,
 		NewPeriodEnd:      s.CurrentPeriodEnd,
-		RenewedAt:         now,
+		RenewedAt:         now.UTC(),
 	})
 
 	return invoice, nil
@@ -108,18 +107,18 @@ func (s *Subscription) Cancel(now time.Time, atPeriodEnd bool) error {
 		s.CancelAtPeriodEnd = true
 	} else {
 		s.Status = SubscriptionStatusCanceled
-		s.CanceledAt = &now
+		utcNow := now.UTC()
+		s.CanceledAt = &utcNow
 	}
-	s.UpdatedAt = now
+	s.UpdatedAt = now.UTC()
 
-	// Заполняем событие ПОЛНОЙ информацией
-	s.domainEvents = append(s.domainEvents, SubscriptionCanceledEvent{
+	s.domainEvents.Raise(SubscriptionCanceledEvent{
 		SubscriptionID:    s.ID,
 		SubscriptionPubID: s.PublicID,
 		CustomerID:        s.CustomerID,
 		CustomerPubID:     s.CustomerPublicID,
 		Status:            s.Status,
-		CanceledAt:        now,
+		CanceledAt:        now.UTC(),
 		AtPeriodEnd:       atPeriodEnd,
 	})
 
@@ -127,23 +126,22 @@ func (s *Subscription) Cancel(now time.Time, atPeriodEnd bool) error {
 }
 
 func (s *Subscription) GetAndClearEvents() DomainEvents {
-	events := s.domainEvents
-	s.domainEvents = nil
-	return events
+	return s.domainEvents.ClearAndReturn()
 }
 
 func (s *Subscription) MarkPaid(now time.Time) {
 	s.Status = SubscriptionStatusActive
-	s.UpdatedAt = now
+	s.UpdatedAt = now.UTC()
 }
 
 func (s *Subscription) MarkPastDue(now time.Time) {
 	s.Status = SubscriptionStatusPastDue
-	s.UpdatedAt = now
+	s.UpdatedAt = now.UTC()
 }
 
 func (s *Subscription) MarkCanceled(now time.Time) {
 	s.Status = SubscriptionStatusCanceled
-	s.CanceledAt = &now
-	s.UpdatedAt = now
+	utcNow := now.UTC()
+	s.CanceledAt = &utcNow
+	s.UpdatedAt = now.UTC()
 }

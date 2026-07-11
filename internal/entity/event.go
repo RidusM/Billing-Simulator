@@ -9,7 +9,6 @@ import (
 
 type EventType string
 
-// TODO: ИЗМЕНИТЬ!!!!!!!!!
 const (
 	EventCustomerCreated      EventType = "customer.created"
 	EventSubscriptionCreated  EventType = "subscription.created"

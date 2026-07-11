@@ -10,10 +10,14 @@ type DomainEvent interface {
 	EventType() string
 	OccurredOn() time.Time
 	AggregateID() uuid.UUID
-	AggregateType() string // ← Добавлено
+	AggregateType() string
 }
 
 type DomainEvents []DomainEvent
+
+func (de *DomainEvents) Raise(event DomainEvent) {
+	*de = append(*de, event)
+}
 
 func (de *DomainEvents) ClearAndReturn() DomainEvents {
 	events := *de

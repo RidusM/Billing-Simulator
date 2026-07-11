@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 )
 
+type TimeJumpListener func(oldTime, newTime time.Time)
+
 type (
 	VirtualClock interface {
 		Now() time.Time

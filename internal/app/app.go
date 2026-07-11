@@ -196,6 +196,8 @@ func initServices(
 		service.DefaultOutboxProcessorConfig(),
 	)
 
+	rateManager := service.NewPaymentRateManager(cfg.Billing.DefaultPaymentSuccessRate)
+
 	// Billing Service
 	billing := service.NewBillingService(
 		repos.subscription,
@@ -205,6 +207,7 @@ func initServices(
 		tm,
 		log,
 		vClock,
+		rateManager, // ← Передаем
 	)
 
 	// Customer Service
@@ -240,6 +243,7 @@ func initServices(
 		tm,
 		log,
 		vClock,
+		rateManager, // ← Передаем
 	)
 
 	// Time Service

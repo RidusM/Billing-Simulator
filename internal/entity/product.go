@@ -33,12 +33,12 @@ func NewProduct(name, description string, now time.Time) *Product {
 		domainEvents: make(DomainEvents, 0),
 	}
 
-	p.domainEvents = append(p.domainEvents, ProductCreatedEvent{
+	p.domainEvents.Raise(ProductCreatedEvent{
 		ProductID:    p.ID,
 		ProductPubID: p.PublicID,
 		Name:         p.Name,
 		Description:  p.Description,
-		CreatedAt:    now,
+		CreatedAt:    now.UTC(),
 	})
 
 	return p
@@ -48,20 +48,18 @@ func (p *Product) Update(name, description string, active bool, now time.Time) {
 	p.Name = name
 	p.Description = description
 	p.Active = active
-	p.UpdatedAt = now
+	p.UpdatedAt = now.UTC()
 
-	p.domainEvents = append(p.domainEvents, ProductUpdatedEvent{
+	p.domainEvents.Raise(ProductUpdatedEvent{
 		ProductID:    p.ID,
 		ProductPubID: p.PublicID,
 		Name:         p.Name,
 		Description:  p.Description,
 		Active:       p.Active,
-		UpdatedAt:    now,
+		UpdatedAt:    now.UTC(),
 	})
 }
 
 func (p *Product) GetAndClearEvents() DomainEvents {
-	events := p.domainEvents
-	p.domainEvents = nil
-	return events
+	return p.domainEvents.ClearAndReturn()
 }

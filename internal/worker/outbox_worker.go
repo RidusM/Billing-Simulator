@@ -1,4 +1,4 @@
-package service
+package worker
 
 import (
 	"bill-stripe-sim/internal/entity"
@@ -19,9 +19,18 @@ type OutboxPoller interface {
 	DeleteOldProcessed(ctx context.Context, olderThan time.Duration) (int64, error)
 }
 
+type NotificationService interface {
+	HandleDomainEvent(
+		ctx context.Context,
+		eventType string,
+		customerID uuid.UUID,
+		payload []byte,
+	) error
+}
+
 type OutboxProcessor struct {
 	outbox       OutboxPoller
-	notification *NotificationService
+	notification NotificationService
 	log          logger.Logger
 	cfg          OutboxProcessorConfig
 	wg           sync.WaitGroup
@@ -52,7 +61,7 @@ func DefaultOutboxProcessorConfig() OutboxProcessorConfig {
 
 func NewOutboxProcessor(
 	outbox OutboxPoller,
-	notification *NotificationService,
+	notification NotificationService,
 	log logger.Logger,
 	cfg OutboxProcessorConfig,
 ) *OutboxProcessor {

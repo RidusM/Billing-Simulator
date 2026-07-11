@@ -59,22 +59,22 @@ func NewPaymentIntent(customerID uuid.UUID, invoiceID *uuid.UUID, amount int64, 
 func (pi *PaymentIntent) MarkSucceeded(now time.Time) {
 	pi.Status = PaymentIntentStatusSucceeded
 	pi.AmountCaptured = pi.Amount
-	pi.UpdatedAt = now
+	pi.UpdatedAt = now.UTC()
 
-	pi.domainEvents = append(pi.domainEvents, PaymentIntentSucceededEvent{
+	pi.domainEvents.Raise(PaymentIntentSucceededEvent{
 		PaymentIntentID:    pi.ID,
 		PaymentIntentPubID: pi.PublicID,
 		CustomerID:         pi.CustomerID,
 		InvoiceID:          pi.InvoiceID,
 		Amount:             pi.Amount,
 		Currency:           pi.Currency,
-		SucceededAt:        now,
+		SucceededAt:        now.UTC(),
 	})
 }
 
 func (pi *PaymentIntent) MarkFailed(now time.Time, errorCode, declineCode string) {
 	pi.Status = PaymentIntentStatusRequiresPaymentMethod
-	pi.UpdatedAt = now
+	pi.UpdatedAt = now.UTC()
 
 	bytes, _ := json.Marshal(map[string]string{
 		"code":         errorCode,
@@ -82,7 +82,7 @@ func (pi *PaymentIntent) MarkFailed(now time.Time, errorCode, declineCode string
 	})
 	pi.LastPaymentError = bytes
 
-	pi.domainEvents = append(pi.domainEvents, PaymentIntentFailedEvent{
+	pi.domainEvents.Raise(PaymentIntentFailedEvent{
 		PaymentIntentID:    pi.ID,
 		PaymentIntentPubID: pi.PublicID,
 		CustomerID:         pi.CustomerID,
@@ -91,12 +91,10 @@ func (pi *PaymentIntent) MarkFailed(now time.Time, errorCode, declineCode string
 		Currency:           pi.Currency,
 		ErrorCode:          errorCode,
 		DeclineCode:        declineCode,
-		FailedAt:           now,
+		FailedAt:           now.UTC(),
 	})
 }
 
 func (pi *PaymentIntent) GetAndClearEvents() DomainEvents {
-	events := pi.domainEvents
-	pi.domainEvents = nil
-	return events
+	return pi.domainEvents.ClearAndReturn()
 }

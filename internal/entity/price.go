@@ -52,7 +52,7 @@ func NewPrice(productID uuid.UUID, amount int64, currency string, interval Billi
 		domainEvents:  make(DomainEvents, 0),
 	}
 
-	p.domainEvents = append(p.domainEvents, PriceCreatedEvent{
+	p.domainEvents.Raise(PriceCreatedEvent{
 		PriceID:       p.ID,
 		PricePubID:    p.PublicID,
 		ProductID:     p.ProductID,
@@ -60,7 +60,7 @@ func NewPrice(productID uuid.UUID, amount int64, currency string, interval Billi
 		Currency:      p.Currency,
 		Interval:      p.Interval,
 		IntervalCount: p.IntervalCount,
-		CreatedAt:     now,
+		CreatedAt:     now.UTC(),
 	})
 
 	return p
@@ -85,9 +85,9 @@ func (p Price) NextBillingDate(from time.Time) time.Time {
 func (p *Price) Update(amount int64, active bool, now time.Time) {
 	p.Amount = amount
 	p.Active = active
-	p.UpdatedAt = now
+	p.UpdatedAt = now.UTC()
 
-	p.domainEvents = append(p.domainEvents, PriceUpdatedEvent{
+	p.domainEvents.Raise(PriceUpdatedEvent{
 		PriceID:       p.ID,
 		PricePubID:    p.PublicID,
 		ProductID:     p.ProductID,
@@ -96,12 +96,10 @@ func (p *Price) Update(amount int64, active bool, now time.Time) {
 		Interval:      p.Interval,
 		IntervalCount: p.IntervalCount,
 		Active:        p.Active,
-		UpdatedAt:     now,
+		UpdatedAt:     now.UTC(),
 	})
 }
 
 func (p *Price) GetAndClearEvents() DomainEvents {
-	events := p.domainEvents
-	p.domainEvents = nil
-	return events
+	return p.domainEvents.ClearAndReturn()
 }

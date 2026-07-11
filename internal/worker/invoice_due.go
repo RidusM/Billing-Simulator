@@ -9,14 +9,21 @@ import (
 	"github.com/google/uuid"
 )
 
+type TimeJumpListener func(oldTime, newTime time.Time)
+
 type InvoiceRepository interface {
 	GetOverdue(ctx context.Context, before time.Time, limit uint64) ([]*entity.Invoice, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.InvoiceStatus) error
 }
 
-type SubscriptionRepository interface {
-	GetByInvoiceID(ctx context.Context, invoiceID uuid.UUID) (*entity.Subscription, error)
-	Update(ctx context.Context, s *entity.Subscription) error
+type VirtualClock interface {
+	Now() time.Time
+	OnTimeJump(listener TimeJumpListener)
+	Advance(d time.Duration) error
+	SetTime(t time.Time)
+	Offset() time.Duration
+	Reset()
+	IsAhead()
 }
 
 type InvoiceDueWorker struct {

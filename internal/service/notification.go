@@ -74,6 +74,7 @@ func (s *NotificationService) handleEvent(ctx context.Context, customerID uuid.U
 	var multiErr error
 
 	// Kafka
+	topic := fmt.Sprintf("billing.%s", string(eventType))
 	if err := s.sender.Send(ctx, topic, payload, nil); err != nil {
 		s.log.Error("failed to send to Kafka", "error", err)
 		multiErr = fmt.Errorf("kafka: %w", err)

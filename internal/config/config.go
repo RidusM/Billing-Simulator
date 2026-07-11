@@ -10,6 +10,7 @@ type (
 		Kafka    Kafka    `env-prefix:"KAFKA_"`
 		HTTP     HTTP     `env-prefix:"HTTP_"`
 		Logger   Logger   `env-prefix:"LOGGER_"`
+		Billing  Billing  `env-prefix:"BILLING_"`
 		Env      string   `env:"ENV" env-default:"local" validate:"oneof=local dev prod"`
 	}
 
@@ -74,5 +75,9 @@ type (
 		MaxSize    int `env:"MAX_SIZE"    env-default:"100"                         validate:"min=1,max=1000"`
 		MaxBackups int `env:"MAX_BACKUPS" env-default:"3"                           validate:"min=0,max=20"`
 		MaxAge     int `env:"MAX_AGE"     env-default:"28"                          validate:"min=1,max=365"`
+	}
+
+	Billing struct {
+		DefaultPaymentSuccessRate float64 `env:"PAYMENT_SUCCESS_RATE" env-default:"0.85" validate:"gte=0,lte=1"`
 	}
 )
