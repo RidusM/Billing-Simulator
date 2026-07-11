@@ -25,7 +25,7 @@ type PaymentService struct {
 	tm             TransactionManager
 	log            logger.Logger
 	clock          VirtualClock
-	rateManager    *PaymentRateManager // ← Добавляем
+	rateManager    *PaymentRateManager
 }
 
 func NewPaymentService(
@@ -35,7 +35,7 @@ func NewPaymentService(
 	tm TransactionManager,
 	log logger.Logger,
 	clock VirtualClock,
-	rateManager *PaymentRateManager, // ← Добавляем
+	rateManager *PaymentRateManager,
 ) *PaymentService {
 	return &PaymentService{
 		paymentIntents: paymentIntents,
@@ -44,7 +44,7 @@ func NewPaymentService(
 		tm:             tm,
 		log:            log,
 		clock:          clock,
-		rateManager:    rateManager, // ← Добавляем
+		rateManager:    rateManager,
 	}
 }
 
@@ -58,7 +58,12 @@ func (s *PaymentService) CreatePaymentIntent(ctx context.Context, invoiceID uuid
 			return fmt.Errorf("get invoice: %w", err)
 		}
 
-		pi = entity.NewPaymentIntent(inv.CustomerID, &inv.ID, inv.Amount, inv.Currency, s.clock.Now())
+		var err2 error
+		pi, err2 = entity.NewPaymentIntent(inv.CustomerID, &inv.ID, inv.Amount, inv.Currency, s.clock.Now())
+		if err2 != nil {
+			return fmt.Errorf("create payment intent entity: %w", err2)
+		}
+
 		return s.paymentIntents.Create(ctx, pi)
 	})
 
@@ -80,9 +85,7 @@ func (s *PaymentService) ConfirmPayment(ctx context.Context, publicID string) (*
 			return fmt.Errorf("get payment intent: %w", err)
 		}
 
-		// ← ИСПРАВЛЕНО: передаем successRate (по умолчанию 0.85)
 		if simulatePayment(ctx, s.rateManager) == entity.InvoiceStatusPaid {
-			// ← ИСПРАВЛЕНО: передаем now
 			pi.MarkSucceeded(s.clock.Now())
 
 			// Обновить инвойс
@@ -97,7 +100,6 @@ func (s *PaymentService) ConfirmPayment(ctx context.Context, publicID string) (*
 				return fmt.Errorf("update invoice: %w", err)
 			}
 		} else {
-			// ← ИСПРАВЛЕНО: передаем now
 			pi.MarkFailed(s.clock.Now(), "card_declined", "insufficient_funds")
 
 			// Также нужно обновить инвойс как failed

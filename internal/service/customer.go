@@ -43,7 +43,11 @@ func (s *CustomerService) CreateCustomer(ctx context.Context, email string) (*en
 
 	err := s.tm.ExecuteInTransaction(ctx, op, func(ctx context.Context) error {
 		now := s.clock.Now()
-		customer = entity.NewCustomer(email, "", now)
+		var err error
+		customer, err = entity.NewCustomer(email, "", now)
+		if err != nil {
+			return fmt.Errorf("create customer entity: %w", err)
+		}
 
 		if err := s.customers.Create(ctx, customer); err != nil {
 			return fmt.Errorf("create customer: %w", err)
