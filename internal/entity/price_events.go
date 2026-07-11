@@ -17,7 +17,7 @@ type PriceCreatedEvent struct {
 	CreatedAt     time.Time
 }
 
-func (e PriceCreatedEvent) EventType() string      { return "price.created" }
+func (e PriceCreatedEvent) EventType() EventType   { return EventPriceCreated }
 func (e PriceCreatedEvent) OccurredOn() time.Time  { return e.CreatedAt }
 func (e PriceCreatedEvent) AggregateID() uuid.UUID { return e.PriceID }
 func (e PriceCreatedEvent) AggregateType() string  { return "price" }
@@ -34,7 +34,7 @@ type PriceUpdatedEvent struct {
 	UpdatedAt     time.Time
 }
 
-func (e PriceUpdatedEvent) EventType() string      { return "price.updated" }
+func (e PriceUpdatedEvent) EventType() EventType   { return EventPriceUpdated }
 func (e PriceUpdatedEvent) OccurredOn() time.Time  { return e.UpdatedAt }
 func (e PriceUpdatedEvent) AggregateID() uuid.UUID { return e.PriceID }
 func (e PriceUpdatedEvent) AggregateType() string  { return "price" }

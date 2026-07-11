@@ -7,30 +7,35 @@ import (
 )
 
 type Product struct {
-	ID           uuid.UUID
-	PublicID     string
-	Name         string
-	Description  string
-	Active       bool
-	Metadata     map[string]string
-	DeletedAt    *time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	domainEvents DomainEvents
+	ID          uuid.UUID
+	PublicID    string
+	Name        string
+	Description string
+	Active      bool
+	Metadata    map[string]string
+	DeletedAt   *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	AggregateRoot
 }
 
-func NewProduct(name, description string, now time.Time) *Product {
-	pubID, _ := GeneratePublicID("prod")
+func NewProduct(name, description string, now time.Time) (*Product, error) {
+	pubID, err := GeneratePublicID("prod")
+	if err != nil {
+		return nil, err
+	}
+
+	utc := now.UTC()
+
 	p := &Product{
 		ID:           uuid.New(),
 		PublicID:     pubID,
 		Name:         name,
 		Description:  description,
 		Active:       true,
-		Metadata:     make(map[string]string),
-		CreatedAt:    now.UTC(),
-		UpdatedAt:    now.UTC(),
-		domainEvents: make(DomainEvents, 0),
+		Metadata:     NewMetadata(),
+		CreatedAt:    utc,
+		UpdatedAt:    utc,
 	}
 
 	p.domainEvents.Raise(ProductCreatedEvent{
@@ -38,17 +43,31 @@ func NewProduct(name, description string, now time.Time) *Product {
 		ProductPubID: p.PublicID,
 		Name:         p.Name,
 		Description:  p.Description,
-		CreatedAt:    now.UTC(),
+		CreatedAt:    utc,
 	})
 
-	return p
+	return p, nil
 }
 
-func (p *Product) Update(name, description string, active bool, now time.Time) {
+func (p *Product) Update(
+	name,
+	description string,
+	active bool,
+	now time.Time,
+) {
+
+	if p.Name == name &&
+		p.Description == description &&
+		p.Active == active {
+		return
+	}
+
+	utc := now.UTC()
+
 	p.Name = name
 	p.Description = description
 	p.Active = active
-	p.UpdatedAt = now.UTC()
+	p.UpdatedAt = utc
 
 	p.domainEvents.Raise(ProductUpdatedEvent{
 		ProductID:    p.ID,
@@ -56,7 +75,7 @@ func (p *Product) Update(name, description string, active bool, now time.Time) {
 		Name:         p.Name,
 		Description:  p.Description,
 		Active:       p.Active,
-		UpdatedAt:    now.UTC(),
+		UpdatedAt:    utc,
 	})
 }
 

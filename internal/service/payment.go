@@ -106,11 +106,7 @@ func (s *PaymentService) ConfirmPayment(ctx context.Context, publicID string) (*
 				return fmt.Errorf("get invoice: %w", err)
 			}
 
-			// ← ИСПРАВЛЕНО: сначала инкрементируем AttemptCount
-			inv.AttemptCount++
-			isFinalAttempt := inv.AttemptCount >= 3
-
-			// ← ИСПРАВЛЕНО: передаем isFinalAttempt
+			isFinalAttempt := (inv.AttemptCount + 1) >= 3
 			if err := inv.MarkPaymentFailed(s.clock.Now(), "card_declined", isFinalAttempt); err != nil {
 				return fmt.Errorf("mark payment failed: %w", err)
 			}

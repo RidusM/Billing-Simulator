@@ -1,4 +1,4 @@
-package http
+package handler
 
 import (
 	"bill-stripe-sim/internal/entity"

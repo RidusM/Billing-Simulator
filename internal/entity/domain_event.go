@@ -7,7 +7,7 @@ import (
 )
 
 type DomainEvent interface {
-	EventType() string
+	EventType() EventType
 	OccurredOn() time.Time
 	AggregateID() uuid.UUID
 	AggregateType() string

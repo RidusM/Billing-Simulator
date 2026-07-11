@@ -36,8 +36,14 @@ type WebhookLog struct {
 	UpdatedAt     time.Time
 }
 
-func NewWebhookLog(eventID, endpointID, traceID uuid.UUID, eventType string, payload json.RawMessage, targetURL string, now time.Time) *WebhookLog {
-	pubID, _ := GeneratePublicID("wh")
+func NewWebhookLog(eventID, endpointID, traceID uuid.UUID, eventType string, payload json.RawMessage, targetURL string, now time.Time) (*WebhookLog, error) {
+	pubID, err := GeneratePublicID("wh")
+	if err != nil {
+		return nil, err
+	}
+
+	utc := now.UTC()
+
 	return &WebhookLog{
 		ID:            uuid.New(),
 		PublicID:      pubID,
@@ -50,24 +56,32 @@ func NewWebhookLog(eventID, endpointID, traceID uuid.UUID, eventType string, pay
 		Status:        WebhookStatusPending,
 		Attempt:       1,
 		MaxAttempts:   5,
-		NextAttemptAt: now.UTC(),
-		CreatedAt:     now.UTC(),
-		UpdatedAt:     now.UTC(),
-	}
+		NextAttemptAt: utc,
+		CreatedAt:     utc,
+		UpdatedAt:     utc,
+	}, nil
 }
 
 func (wl *WebhookLog) MarkDelivered(responseCode int, now time.Time) {
+	utc := now.UTC()
+
 	wl.Status = WebhookStatusDelivered
 	wl.ResponseCode = &responseCode
 	wl.ErrorMessage = nil
-	wl.DeliveredAt = &now
-	wl.UpdatedAt = now.UTC()
+	wl.DeliveredAt = &utc
+	wl.UpdatedAt = utc
 }
 
 func (wl *WebhookLog) MarkFailed(errMsg string, nextAttempt time.Time) {
-	wl.Status = WebhookStatusFailed
+	now := time.Now().UTC()
 	wl.ErrorMessage = &errMsg
 	wl.Attempt++
 	wl.NextAttemptAt = nextAttempt.UTC()
-	wl.UpdatedAt = nextAttempt.UTC()
+	wl.UpdatedAt = now
+
+	if wl.Attempt >= wl.MaxAttempts {
+		wl.Status = WebhookStatusFailed
+	} else {
+		wl.Status = WebhookStatusPending
+	}
 }

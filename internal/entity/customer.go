@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,41 +18,72 @@ type Customer struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
-	domainEvents DomainEvents
+	AggregateRoot
 }
 
-func NewCustomer(email, name string, now time.Time) *Customer {
-	pubID, _ := GeneratePublicID("cus")
-	c := &Customer{
-		ID:           uuid.New(),
-		PublicID:     pubID,
-		Email:        email,
-		Name:         name,
-		Metadata:     make(map[string]string),
-		CreatedAt:    now.UTC(),
-		UpdatedAt:    now.UTC(),
-		domainEvents: make(DomainEvents, 0),
+func NewCustomer(email, name string, now time.Time) (*Customer, error) {
+	pubID, err := GeneratePublicID("cus")
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate customer public id: %w", err)
 	}
 
-	c.domainEvents.Raise(CustomerCreatedEvent{
+	utc := now.UTC()
+
+	c := &Customer{
+		ID:        uuid.New(),
+		PublicID:  pubID,
+		Email:     email,
+		Name:      name,
+		Metadata:  NewMetadata(),
+		CreatedAt: utc,
+		UpdatedAt: utc,
+	}
+
+	c.Raise(CustomerCreatedEvent{
 		CustomerID:    c.ID,
 		CustomerPubID: c.PublicID,
 		Email:         c.Email,
 		Name:          c.Name,
-		CreatedAt:     now.UTC(),
+		CreatedAt:     utc,
 	})
 
-	return c
+	return c, nil
 }
 
 func (c *Customer) UpdateEmail(email string, now time.Time) {
+	if c.Email == email {
+		return // Ничего не менялось
+	}
 	c.Email = email
-	c.UpdatedAt = now.UTC()
+	utc := now.UTC()
+	c.UpdatedAt = utc
+
+	// ИСПРАВЛЕНО: Теперь бэкенд пользователя мгновенно узнает об обновлении почты!
+	c.domainEvents.Raise(CustomerUpdatedEvent{
+		CustomerID:    c.ID,
+		CustomerPubID: c.PublicID,
+		Email:         c.Email,
+		Name:          c.Name,
+		UpdatedAt:     c.UpdatedAt,
+	})
 }
 
 func (c *Customer) UpdateName(name string, now time.Time) {
+	if c.Name == name {
+		return // Ничего не менялось
+	}
 	c.Name = name
-	c.UpdatedAt = now.UTC()
+	utc := now.UTC()
+	c.UpdatedAt = utc
+
+	// ИСПРАВЛЕНО: Поднимаем событие при смене имени
+	c.domainEvents.Raise(CustomerUpdatedEvent{
+		CustomerID:    c.ID,
+		CustomerPubID: c.PublicID,
+		Email:         c.Email,
+		Name:          c.Name,
+		UpdatedAt:     c.UpdatedAt,
+	})
 }
 
 func (c *Customer) GetAndClearEvents() DomainEvents {

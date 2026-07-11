@@ -1,4 +1,4 @@
-package http
+package handler
 
 import (
 	"net/http"
@@ -106,7 +106,7 @@ func (h *BillingHandler) GetSubscription(c *gin.Context) {
 func (h *BillingHandler) CancelSubscription(c *gin.Context) {
 	idStr := c.Param("id")
 
-	if err := h.svc.CancelSubscription(c.Request.Context(), idStr); err != nil {
+	if err := h.svc.CancelSubscription(c.Request.Context(), idStr, atPeriodEnd); err != nil {
 		h.handleServiceError(c, err)
 		return
 	}

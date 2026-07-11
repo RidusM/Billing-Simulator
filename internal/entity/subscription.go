@@ -2,6 +2,7 @@ package entity
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,48 +39,106 @@ type Subscription struct {
 	DeletedAt           *time.Time
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
-
-	domainEvents DomainEvents
+	domainEvents        DomainEvents
 }
 
-func NewSubscription(customerID, priceID uuid.UUID, periodStart, periodEnd time.Time, now time.Time) *Subscription {
-	pubID, _ := GeneratePublicID("sub")
-	return &Subscription{
+func NewSubscription(customerID, priceID uuid.UUID, customerPubID, pricePubID string, periodStart, periodEnd time.Time, now time.Time) (*Subscription, error) {
+	pubID, err := GeneratePublicID("sub")
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate subscription public id: %w", err)
+	}
+
+	utc := now.UTC()
+
+	s := &Subscription{
 		ID:                 uuid.New(),
 		PublicID:           pubID,
 		CustomerID:         customerID,
+		CustomerPublicID:   customerPubID,
 		PriceID:            priceID,
+		PricePublicID:      pricePubID,
 		Status:             SubscriptionStatusActive,
 		CurrentPeriodStart: periodStart.UTC(),
 		CurrentPeriodEnd:   periodEnd.UTC(),
 		NextBillingAt:      periodEnd.UTC(),
-		Metadata:           make(map[string]string),
-		CreatedAt:          now.UTC(),
-		UpdatedAt:          now.UTC(),
+		Metadata:           NewMetadata(),
+		CreatedAt:          utc,
+		UpdatedAt:          utc,
 		domainEvents:       make(DomainEvents, 0),
 	}
+
+	s.domainEvents.Raise(SubscriptionCreatedEvent{
+		SubscriptionID:    s.ID,
+		SubscriptionPubID: s.PublicID,
+		CustomerID:        s.CustomerID,
+		CustomerPubID:     s.CustomerPublicID,
+		PriceID:           s.PriceID,
+		PricePubID:        s.PricePublicID,
+		Status:            s.Status,
+		CurrentPeriodEnd:  s.CurrentPeriodEnd,
+		NextBillingAt:     s.NextBillingAt,
+		CreatedAt:         utc,
+	})
+
+	return s, nil
+}
+
+func (s *Subscription) Cancel(now time.Time, atPeriodEnd bool) error {
+	if s.Status == SubscriptionStatusCanceled {
+		return ErrSubscriptionAlreadyCanceled
+	}
+
+	if atPeriodEnd {
+		if s.CancelAtPeriodEnd {
+			return nil
+		}
+
+		s.CancelAtPeriodEnd = true
+		s.markUpdated(now)
+
+		return nil
+	}
+
+	s.MarkCanceled(now)
+
+	return nil
+}
+
+func (s *Subscription) markUpdated(now time.Time) {
+	utc := now.UTC()
+
+	s.UpdatedAt = utc
+
+	s.domainEvents.Raise(SubscriptionUpdatedEvent{
+		SubscriptionID:    s.ID,
+		SubscriptionPubID: s.PublicID,
+		CustomerID:        s.CustomerID,
+		CustomerPubID:     s.CustomerPublicID,
+		Status:            s.Status,
+		CancelAtPeriodEnd: s.CancelAtPeriodEnd,
+		UpdatedAt:         utc,
+	})
 }
 
 func (s *Subscription) Renew(now time.Time, price *Price) (*Invoice, error) {
-	if s.Status != SubscriptionStatusActive && s.Status != SubscriptionStatusTrialing {
+
+	if s.Status != SubscriptionStatusActive &&
+		s.Status != SubscriptionStatusTrialing {
 		return nil, ErrSubscriptionNotActive
 	}
 
-	invoice := NewInvoice(
-		s.CustomerID,
-		s.CustomerPublicID,
-		&s.ID,
-		&s.PublicID,
-		price.Amount,
-		price.Currency,
-		now,
-	)
+	return NewRenewalInvoice(s, price, now)
+}
 
+// ConfirmRenewal вызывается сервисом ТОЛЬКО когда платеж за инвойс успешен
+func (s *Subscription) ConfirmRenewal(newPeriodEnd time.Time, invoice *Invoice, now time.Time) {
+	utc := now.UTC()
+	
 	s.CurrentPeriodStart = s.CurrentPeriodEnd
-	s.CurrentPeriodEnd = price.NextBillingDate(s.CurrentPeriodEnd)
-	s.NextBillingAt = s.CurrentPeriodEnd
+	s.CurrentPeriodEnd = newPeriodEnd
+	s.NextBillingAt = newPeriodEnd
 	s.Status = SubscriptionStatusActive
-	s.UpdatedAt = now.UTC()
+	s.UpdatedAt = utc
 
 	s.domainEvents.Raise(SubscriptionRenewedEvent{
 		SubscriptionID:    s.ID,
@@ -92,37 +151,8 @@ func (s *Subscription) Renew(now time.Time, price *Price) (*Invoice, error) {
 		InvoiceCurrency:   invoice.Currency,
 		InvoiceStatus:     invoice.Status,
 		NewPeriodEnd:      s.CurrentPeriodEnd,
-		RenewedAt:         now.UTC(),
+		RenewedAt:         utc,
 	})
-
-	return invoice, nil
-}
-
-func (s *Subscription) Cancel(now time.Time, atPeriodEnd bool) error {
-	if s.Status == SubscriptionStatusCanceled {
-		return ErrSubscriptionAlreadyCanceled
-	}
-
-	if atPeriodEnd {
-		s.CancelAtPeriodEnd = true
-	} else {
-		s.Status = SubscriptionStatusCanceled
-		utcNow := now.UTC()
-		s.CanceledAt = &utcNow
-	}
-	s.UpdatedAt = now.UTC()
-
-	s.domainEvents.Raise(SubscriptionCanceledEvent{
-		SubscriptionID:    s.ID,
-		SubscriptionPubID: s.PublicID,
-		CustomerID:        s.CustomerID,
-		CustomerPubID:     s.CustomerPublicID,
-		Status:            s.Status,
-		CanceledAt:        now.UTC(),
-		AtPeriodEnd:       atPeriodEnd,
-	})
-
-	return nil
 }
 
 func (s *Subscription) GetAndClearEvents() DomainEvents {
@@ -130,18 +160,41 @@ func (s *Subscription) GetAndClearEvents() DomainEvents {
 }
 
 func (s *Subscription) MarkPaid(now time.Time) {
+	if s.Status == SubscriptionStatusActive {
+		return
+	}
+
 	s.Status = SubscriptionStatusActive
-	s.UpdatedAt = now.UTC()
+	s.markUpdated(now)
 }
 
 func (s *Subscription) MarkPastDue(now time.Time) {
+	if s.Status == SubscriptionStatusPastDue {
+		return
+	}
+
 	s.Status = SubscriptionStatusPastDue
-	s.UpdatedAt = now.UTC()
+	s.markUpdated(now)
 }
 
 func (s *Subscription) MarkCanceled(now time.Time) {
+	if s.Status == SubscriptionStatusCanceled {
+		return
+	}
+
+	utc := now.UTC()
+
 	s.Status = SubscriptionStatusCanceled
-	utcNow := now.UTC()
-	s.CanceledAt = &utcNow
-	s.UpdatedAt = now.UTC()
+	s.CanceledAt = &utc
+	s.UpdatedAt = utc
+
+	s.domainEvents.Raise(SubscriptionCanceledEvent{
+		SubscriptionID:    s.ID,
+		SubscriptionPubID: s.PublicID,
+		CustomerID:        s.CustomerID,
+		CustomerPubID:     s.CustomerPublicID,
+		Status:            s.Status,
+		CanceledAt:        utc,
+		AtPeriodEnd:       s.CancelAtPeriodEnd,
+	})
 }

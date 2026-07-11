@@ -25,6 +25,7 @@ func NewEventDispatcher(
 ) *EventDispatcher {
 	return &EventDispatcher{
 		outbox: outbox,
+		clock:  clock,
 		log:    log,
 	}
 }

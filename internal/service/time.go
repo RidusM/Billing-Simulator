@@ -21,7 +21,7 @@ type (
 		SetTime(t time.Time)
 		Offset() time.Duration
 		Reset()
-		IsAhead()
+		IsAhead() bool
 	}
 
 	RenewalProcessor interface {

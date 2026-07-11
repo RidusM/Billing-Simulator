@@ -26,8 +26,11 @@ type WebhookEndpoint struct {
 	UpdatedAt       time.Time
 }
 
-func NewWebhookEndpoint(customerID uuid.UUID, now time.Time, url, secretPrefix, secret string) *WebhookEndpoint {
-	pubID, _ := GeneratePublicID("we")
+func NewWebhookEndpoint(customerID uuid.UUID, now time.Time, url, secretPrefix, secret string) (*WebhookEndpoint, error) {
+	pubID, err := GeneratePublicID("we")
+	if err != nil {
+		return nil, err
+	}
 	return &WebhookEndpoint{
 		ID:            uuid.New(),
 		PublicID:      pubID,
@@ -39,7 +42,7 @@ func NewWebhookEndpoint(customerID uuid.UUID, now time.Time, url, secretPrefix, 
 		Enabled:       true,
 		CreatedAt:     now,
 		UpdatedAt:     now,
-	}
+	}, nil
 }
 
 func (e *WebhookEndpoint) ShouldReceiveEvent(eventType string) bool {
@@ -61,5 +64,6 @@ func (e *WebhookEndpoint) SignPayload(payload []byte, timestamp int64) string {
 	signedPayload := fmt.Sprintf("%d.%s", timestamp, string(payload))
 	mac := hmac.New(sha256.New, []byte(e.Secret))
 	mac.Write([]byte(signedPayload))
-	return "v1," + hex.EncodeToString(mac.Sum(nil)) // v1, как в Stripe
+
+	return fmt.Sprintf("t=%d,v1=%s", timestamp, hex.EncodeToString(mac.Sum(nil)))
 }

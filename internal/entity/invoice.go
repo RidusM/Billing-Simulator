@@ -1,7 +1,6 @@
 package entity
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,7 +40,7 @@ type Invoice struct {
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 
-	domainEvents DomainEvents
+	AggregateRoot
 }
 
 func NewInvoice(
@@ -52,12 +51,17 @@ func NewInvoice(
 	amount int64,
 	currency string,
 	now time.Time,
-) *Invoice {
-	pID, _ := GeneratePublicID("in")
+) (*Invoice, error) {
+	pubID, err := GeneratePublicID("inv")
+	if err != nil {
+		return nil, err
+	}
+
+	utc := now.UTC()
 
 	inv := &Invoice{
 		ID:                   uuid.New(),
-		PublicID:             pID,
+		PublicID:             pubID,
 		CustomerID:           customerID,
 		CustomerPublicID:     customerPublicID,
 		SubscriptionID:       subscriptionID,
@@ -66,10 +70,9 @@ func NewInvoice(
 		AmountRemaining:      amount,
 		Currency:             currency,
 		Status:               InvoiceStatusOpen,
-		Metadata:             make(map[string]string),
-		CreatedAt:            now.UTC(),
-		UpdatedAt:            now.UTC(),
-		domainEvents:         make(DomainEvents, 0),
+		Metadata:             NewMetadata(),
+		CreatedAt:            utc,
+		UpdatedAt:            utc,
 	}
 
 	inv.domainEvents.Raise(InvoiceCreatedEvent{
@@ -82,10 +85,63 @@ func NewInvoice(
 		Amount:            inv.Amount,
 		Currency:          inv.Currency,
 		Status:            inv.Status,
-		CreatedAt:         now.UTC(),
+		CreatedAt:         utc,
 	})
 
-	return inv
+	return inv, nil
+}
+
+func NewRenewalInvoice(
+	sub *Subscription,
+	price *Price,
+	now time.Time,
+) (*Invoice, error) {
+
+	utc := now.UTC()
+
+	publicID, err := GeneratePublicID("inv")
+	if err != nil {
+		return nil, err
+	}
+
+	periodStart := sub.CurrentPeriodEnd
+	periodEnd := price.NextBillingDate(periodStart)
+
+	inv := &Invoice{
+		ID:                   uuid.New(),
+		PublicID:             publicID,
+		CustomerID:           sub.CustomerID,
+		CustomerPublicID:     sub.CustomerPublicID,
+		SubscriptionID:       &sub.ID,
+		SubscriptionPublicID: &sub.PublicID,
+		Amount:               price.Amount,
+		AmountRemaining:      price.Amount,
+		Currency:             price.Currency,
+		Status:               InvoiceStatusOpen,
+
+		PeriodStart: &periodStart,
+		PeriodEnd:   &periodEnd,
+		DueDate:     &periodStart,
+
+		Metadata:  make(map[string]string),
+		CreatedAt: utc,
+		UpdatedAt: utc,
+	}
+
+	inv.domainEvents.Raise(InvoiceCreatedEvent{
+		InvoiceID:         inv.ID,
+		InvoicePubID:      inv.PublicID,
+		CustomerID:        inv.CustomerID,
+		CustomerPubID:     inv.CustomerPublicID,
+		SubscriptionID:    inv.SubscriptionID,
+		SubscriptionPubID: inv.SubscriptionPublicID,
+		Amount:            inv.Amount,
+		Currency:          inv.Currency,
+		Status:            inv.Status,
+		CreatedAt:         utc,
+	})
+
+	return inv, nil
 }
 
 func (i *Invoice) MarkPaid(now time.Time) error {
@@ -96,10 +152,13 @@ func (i *Invoice) MarkPaid(now time.Time) error {
 		return ErrInvoiceNotPayable
 	}
 
+	utc := now.UTC()
+
 	i.Status = InvoiceStatusPaid
 	i.AmountPaid = i.Amount
+	i.AttemptedAt = &utc
 	i.AmountRemaining = 0
-	i.UpdatedAt = now.UTC()
+	i.UpdatedAt = utc
 
 	i.domainEvents.Raise(InvoicePaidEvent{
 		InvoiceID:      i.ID,
@@ -109,7 +168,7 @@ func (i *Invoice) MarkPaid(now time.Time) error {
 		SubscriptionID: i.SubscriptionID,
 		Amount:         i.Amount,
 		Currency:       i.Currency,
-		PaidAt:         now.UTC(),
+		PaidAt:         utc,
 	})
 
 	return nil
@@ -117,9 +176,9 @@ func (i *Invoice) MarkPaid(now time.Time) error {
 
 func (i *Invoice) MarkPaymentFailed(now time.Time, errorCode string, isFinalAttempt bool) error {
 	i.AttemptCount++
-	utcNow := now.UTC()
-	i.AttemptedAt = &utcNow
-	i.UpdatedAt = utcNow
+	utc := now.UTC()
+	i.AttemptedAt = &utc
+	i.UpdatedAt = utc
 
 	if isFinalAttempt {
 		i.Status = InvoiceStatusUncollectible
@@ -136,18 +195,9 @@ func (i *Invoice) MarkPaymentFailed(now time.Time, errorCode string, isFinalAtte
 		Amount:         i.Amount,
 		Currency:       i.Currency,
 		ErrorCode:      errorCode,
-		FailedAt:       utcNow,
+		FailedAt:       utc,
 	})
 
-	return nil
-}
-
-func (i *Invoice) MarkPastDue(now time.Time) error {
-	if i.Status != InvoiceStatusOpen {
-		return fmt.Errorf("invoice is not in open state")
-	}
-	i.Status = InvoiceStatusOpen
-	i.UpdatedAt = now.UTC()
 	return nil
 }
 

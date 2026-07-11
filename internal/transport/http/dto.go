@@ -1,10 +1,12 @@
-package http
+package handler
 
 import (
 	"time"
-
-	"github.com/google/uuid"
 )
+
+// ЗАМЕНЯЕТ ваш http/dto.go целиком.
+// Главное изменение: наружу (в запросах и ответах) никогда не торчит внутренний uuid.UUID —
+// только public_id-строки ("cus_xxx", "price_xxx", "sub_xxx"), как в реальном Stripe API.
 
 // swagger:model CreateCustomerRequest
 type CreateCustomerRequest struct {
@@ -13,23 +15,26 @@ type CreateCustomerRequest struct {
 
 // swagger:model CreateSubscriptionRequest
 type CreateSubscriptionRequest struct {
-	CustomerID uuid.UUID `json:"customer_id" binding:"required"`
-	PriceID    string    `json:"price_id" binding:"required"`
+	CustomerID string `json:"customer_id" binding:"required"` // public_id, напр. "cus_1a2b3c4d"
+	PriceID    string `json:"price_id" binding:"required"`    // public_id, напр. "price_1a2b3c4d"
+}
+
+// swagger:model CancelSubscriptionRequest
+type CancelSubscriptionRequest struct {
+	AtPeriodEnd bool `json:"at_period_end"`
 }
 
 // swagger:model CustomerResponse
 type CustomerResponse struct {
-	ID        uuid.UUID `json:"id"`
-	PublicID  string    `json:"public_id"`
+	ID        string    `json:"id"` // public_id
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 // swagger:model SubscriptionResponse
 type SubscriptionResponse struct {
-	ID               uuid.UUID `json:"id"`
-	PublicID         string    `json:"public_id"`
-	CustomerID       uuid.UUID `json:"customer_id"`
+	ID               string    `json:"id"` // public_id
+	CustomerID       string    `json:"customer_id"`
 	Status           string    `json:"status"`
 	PriceID          string    `json:"price_id"`
 	CurrentPeriodEnd time.Time `json:"current_period_end"`
@@ -38,7 +43,7 @@ type SubscriptionResponse struct {
 
 // swagger:model AdvanceTimeRequest
 type AdvanceTimeRequest struct {
-	Duration time.Duration `json:"duration" binding:"required"` // например, 720 * time.Hour для 30 дней
+	Duration time.Duration `json:"duration" binding:"required"` // напр. 720 * time.Hour для 30 дней
 }
 
 // swagger:model BaseResponse

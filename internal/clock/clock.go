@@ -120,12 +120,14 @@ func (vc *VirtualClock) Advance(d time.Duration) error {
 	return nil
 }
 
-func (vc *VirtualClock) SetTime(t time.Time) {
+func (vc *VirtualClock) SetTime(t time.Time) error { // ДОБАВЛЕНО: возвращаем error
 	vc.mu.Lock()
 	realNow := time.Now()
 	oldTime := realNow.Add(vc.offset)
-	vc.offset = time.Until(t)
-	newTime := realNow.Add(vc.offset)
+
+	// ИСПРАВЛЕНО: Убран скрытый вызов time.Now() внутри time.Until
+	vc.offset = t.Sub(realNow)
+	newTime := t
 	offset := vc.offset
 	vc.mu.Unlock()
 
@@ -133,16 +135,20 @@ func (vc *VirtualClock) SetTime(t time.Time) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
+		// ИСПРАВЛЕНО: Ошибки больше не подавляются, а прерывают выполнение
 		if err := vc.store.SaveOffset(ctx, offset); err != nil {
 			vc.logger.Error("failed to save clock offset to Redis", "error", err)
+			return fmt.Errorf("failed to persist clock offset: %w", err)
 		}
 
 		if err := vc.store.PublishOffsetChanged(ctx, offset); err != nil {
 			vc.logger.Error("failed to publish clock offset change", "error", err)
+			return fmt.Errorf("failed to sync clock across instances: %w", err)
 		}
 	}
 
 	vc.notifyListeners(oldTime, newTime)
+	return nil
 }
 
 func (vc *VirtualClock) Offset() time.Duration {
@@ -188,6 +194,6 @@ func (vc *VirtualClock) notifyListeners(oldTime, newTime time.Time) {
 	vc.mu.RUnlock()
 
 	for _, listener := range listeners {
-		go listener(oldTime, newTime)
+		listener(oldTime, newTime)
 	}
 }

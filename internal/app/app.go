@@ -1,389 +1,201 @@
 package app
 
 import (
+	"context"
+	"fmt"
+	"time"
+
 	"bill-stripe-sim/internal/clock"
 	"bill-stripe-sim/internal/config"
 	"bill-stripe-sim/internal/repository"
 	"bill-stripe-sim/internal/service"
-	"bill-stripe-sim/internal/transport/http"
-	kafkatransport "bill-stripe-sim/internal/transport/kafka"
 	"bill-stripe-sim/internal/worker"
+	"bill-stripe-sim/pkg/kafka"
+	"bill-stripe-sim/pkg/kafka/dlq"
 	"bill-stripe-sim/pkg/logger"
 	"bill-stripe-sim/pkg/storage/postgres"
 	"bill-stripe-sim/pkg/storage/postgres/transaction"
 	"bill-stripe-sim/pkg/storage/redis"
 	"bill-stripe-sim/pkg/websocket"
+	handler "bill-stripe-sim/transport/http"
+	"bill-stripe-sim/transport/http/webhooksender"
+	kafkatransport "bill-stripe-sim/transport/kafka"
+	wstransport "bill-stripe-sim/transport/websocket"
 
-	pkgkafka "bill-stripe-sim/pkg/kafka"
-	"context"
-	"errors"
-	"fmt"
-	"time"
-
+	"github.com/gin-gonic/gin"
 	"golang.org/x/sync/errgroup"
 )
 
-func Run(ctx context.Context, cfg *config.Config, log logger.Logger) error {
-	var (
-		db       *postgres.Postgres
-		rdb      *redis.Redis
-		producer *pkgkafka.Producer
-		err      error
-	)
+// App — держит всё, что нужно грациозно остановить при shutdown.
+type App struct {
+	log logger.Logger
 
-	defer func() {
-		closeResources(ctx, db, rdb, producer, log)
-	}()
+	httpServer      *handler.Server
+	outboxProcessor *worker.OutboxProcessor
+	invoiceDue      *worker.InvoiceDueWorker
+	renewalWorker   *worker.SubscriptionRenewalWorker
+	webhookRetry    *worker.WebhookRetryWorker
+	cleanupWorkers  []*worker.CleanupWorker
+	kafkaProducer   *kafka.Producer
+	dlq             *dlq.DLQ
+	hub             *websocket.Hub
+}
 
-	// 1. Инициализация инфраструктуры
-	db, rdb, producer, err = initInfrastructure(cfg, log)
+// New — единственное место в проекте, где создаются конкретные типы и связываются интерфейсами.
+// ВСЕ конструкторы принимают интерфейсы, поэтому здесь единственное место, знающее про
+// конкретные *postgres.Postgres/*redis.Redis/*kafka.Producer и т.д.
+//
+// Некоторые вызовы (postgres.New/redis.New/transaction.NewManager) — под вашу реальную
+// сигнатуру pkg/storage; здесь показан ожидаемый контракт, поправьте имена под факт.
+func New(ctx context.Context, cfg *config.Config, log logger.Logger) (*App, error) {
+	const op = "app.New"
+
+	// ---------- Инфраструктура ----------
+
+	pg, err := postgres.New(ctx, cfg.Postgres)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("%s: connect postgres: %w", op, err)
 	}
 
-	// 2. Transaction Manager
-	tm, err := transaction.NewManager(db, log)
+	rdb, err := redis.New(ctx, cfg.Redis)
 	if err != nil {
-		return fmt.Errorf("init transaction manager: %w", err)
+		return nil, fmt.Errorf("%s: connect redis: %w", op, err)
 	}
 
-	// 3. Virtual Clock
-	cStore := clock.NewRedisStore(rdb)
-	vClock, err := clock.NewVirtualClock(cStore, log)
+	tm := transaction.NewManager(pg)
+
+	clockStore := clock.NewRedisStore(rdb)
+	vClock, err := clock.NewVirtualClock(clockStore, log)
 	if err != nil {
-		return fmt.Errorf("init virtual clock: %w", err)
+		return nil, fmt.Errorf("%s: init virtual clock: %w", op, err)
 	}
 
-	// 4. Repositories
-	repos := initRepositories(db, rdb)
+	// ---------- WebSocket Hub (дашборд) ----------
 
-	// 5. Services
-	services, err := initServices(cfg, repos, tm, vClock, producer, log)
-	if err != nil {
-		return err
-	}
-
-	// 6. WebSocket Hub
 	hub := websocket.NewHub(log)
+	go hub.Run()
+	broadcaster := wstransport.NewHubBroadcaster(hub)
 
-	// 7. HTTP Handler
-	handler := http.NewHandler(services.billing, services.time, hub, log)
+	// ---------- Kafka producer + DLQ + адаптер под service.EventSender ----------
 
-	// 8. Cleanup Workers
-	cleanupWorkers := initCleanupWorkers(repos, log)
+	kafkaProducer := kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.EventsTopic, log)
+	kafkaDLQ := dlq.New(kafkaProducer, cfg.Kafka.DLQTopic, log)
+	eventSender := kafkatransport.NewEventSenderAdapter(kafkaProducer, log)
 
-	// 9. Запуск всех компонентов
-	eg, ctx := errgroup.WithContext(ctx)
+	// ---------- Репозитории ----------
 
-	// WebSocket Hub
-	eg.Go(func() error {
-		hub.Run()
-		return nil
+	customerRepo := repository.NewCustomerRepository(pg)
+	productRepo := repository.NewProductRepository(pg)
+	priceRepo := repository.NewPriceRepository(pg)
+	subscriptionRepo := repository.NewSubscriptionRepository(pg)
+	invoiceRepo := repository.NewInvoiceRepository(pg)
+	paymentIntentRepo := repository.NewPaymentIntentRepository(pg)
+	outboxRepo := repository.NewOutboxRepository(pg)
+	webhookEndpointRepo := repository.NewWebhookEndpointRepository(pg)
+	webhookLogRepo := repository.NewWebhookLogRepository(pg)
+	eventRepo := repository.NewEventRepository(pg)
+	cacheRepo := repository.NewCacheRepository(rdb)
+
+	// ---------- Сервисы ----------
+
+	dispatcher := service.NewEventDispatcher(outboxRepo, vClock, log)
+
+	customerSvc := service.NewCustomerService(customerRepo, dispatcher, tm, log, vClock)
+	productSvc := service.NewProductService(productRepo, tm, log, vClock)
+	priceSvc := service.NewPriceService(priceRepo, tm, log, vClock)
+	rateManager := service.NewPaymentRateManager(cfg.Simulation.DefaultPaymentSuccessRate)
+
+	billingSvc := service.NewBillingService(subscriptionRepo, invoiceRepo, priceRepo, dispatcher, tm, log, vClock, rateManager)
+	paymentSvc := service.NewPaymentService(paymentIntentRepo, invoiceRepo, dispatcher, tm, log, vClock, rateManager)
+	invoiceQuerySvc := service.NewInvoiceQueryService(invoiceRepo)
+	webhookEndpointSvc := service.NewWebhookEndpointService(webhookEndpointRepo, tm, vClock)
+
+	webhookSender := webhooksender.NewHTTPSender()
+	webhookDeliverySvc := service.NewWebhookDeliveryService(webhookEndpointRepo, webhookLogRepo, eventRepo, webhookSender, vClock, log)
+
+	notificationSvc := service.NewNotificationService(eventSender, webhookDeliverySvc, broadcaster, log)
+
+	timeSvc := service.NewTimeService(vClock, billingSvc, subscriptionRepo, cacheRepo, log)
+
+	// ---------- Воркеры ----------
+
+	outboxProcessor := worker.NewOutboxProcessor(outboxRepo, notificationSvc, log, worker.DefaultOutboxProcessorConfig())
+	invoiceDueWorker := worker.NewInvoiceDueWorker(invoiceRepo, subscriptionRepo, vClock, log, worker.DefaultInvoiceDueConfig())
+	renewalWorker := worker.NewSubscriptionRenewalWorker(subscriptionRepo, billingSvc, vClock, log, worker.DefaultSubscriptionRenewalConfig())
+	webhookRetryWorker := worker.NewWebhookRetryWorker(webhookLogRepo, webhookEndpointRepo, webhookSender, vClock, log, worker.DefaultWebhookRetryConfig())
+
+	outboxCleanup := worker.NewCleanupWorker("outbox_events", 1*time.Hour, 24*time.Hour, outboxRepo.DeleteOldProcessed, log)
+
+	// ---------- HTTP ----------
+
+	facade := handler.NewBillingFacade(customerSvc, billingSvc, timeSvc, rateManager, priceSvc)
+	billingHandler := handler.NewHandler(facade, log)
+
+	resourceHandlers := handler.NewResourceHandlers(productSvc, priceSvc, invoiceQuerySvc, paymentSvc, webhookEndpointSvc, customerSvc, log)
+	v1 := billingHandler.Engine().Group("/v1")
+	resourceHandlers.RegisterRoutes(v1)
+
+	dashboardHandler := handler.NewDashboardHandler(hub, log)
+	billingHandler.Engine().GET("/ws", func(c *gin.Context) {
+		dashboardHandler.ServeWS(c.Writer, c.Request)
 	})
 
-	// Outbox Processor
-	eg.Go(func() error {
-		if err := services.outboxProcessor.Start(ctx); err != nil {
-			return fmt.Errorf("start outbox processor: %w", err)
-		}
-		<-ctx.Done()
-		return services.outboxProcessor.Stop(context.Background())
-	})
+	httpServer := handler.NewServer(billingHandler, cfg.HTTP, log)
 
-	// Cleanup Workers
-	for _, cw := range cleanupWorkers {
-		cw := cw // capture range variable
-		eg.Go(func() error {
-			cw.Start(ctx)
-			return nil
-		})
-	}
-
-	// HTTP Server
-	eg.Go(func() error {
-		server := http.NewServer(handler, &cfg.HTTP, log)
-		if err := server.Start(ctx); err != nil {
-			return fmt.Errorf("start http server: %w", err)
-		}
-		return nil
-	})
-
-	// 10. Graceful shutdown
-	if egErr := eg.Wait(); egErr != nil && !errors.Is(egErr, context.Canceled) {
-		return fmt.Errorf("app execution failed: %w", egErr)
-	}
-
-	return nil
-}
-
-type repositories struct {
-	customer        *repository.CustomerRepository
-	invoice         *repository.InvoiceRepository
-	subscription    *repository.SubscriptionRepository
-	product         *repository.ProductRepository
-	price           *repository.PriceRepository
-	paymentIntent   *repository.PaymentIntentRepository
-	outbox          *repository.OutboxRepository
-	event           *repository.EventRepository
-	webhookEndpoint *repository.WebhookEndpointRepository
-	webhookLog      *repository.WebhookLogRepository
-	apiRequest      *repository.APIRequestRepository
-	cache           *repository.CacheRepository
-}
-
-func initRepositories(db *postgres.Postgres, rdb *redis.Redis) *repositories {
-	return &repositories{
-		customer:        repository.NewCustomerRepository(db),
-		invoice:         repository.NewInvoiceRepository(db),
-		subscription:    repository.NewSubscriptionRepository(db),
-		product:         repository.NewProductRepository(db),
-		price:           repository.NewPriceRepository(db),
-		paymentIntent:   repository.NewPaymentIntentRepository(db),
-		outbox:          repository.NewOutboxRepository(db),
-		event:           repository.NewEventRepository(db),
-		webhookEndpoint: repository.NewWebhookEndpointRepository(db),
-		webhookLog:      repository.NewWebhookLogRepository(db),
-		apiRequest:      repository.NewAPIRequestRepository(db),
-		cache:           repository.NewCacheRepository(rdb),
-	}
-}
-
-type services struct {
-	billing         *service.BillingService
-	customer        *service.CustomerService
-	product         *service.ProductService
-	price           *service.PriceService
-	payment         *service.PaymentService
-	time            *service.TimeService
-	notification    *service.NotificationService
-	webhookDelivery *service.WebhookDeliveryService
-	eventDispatcher *service.EventDispatcher
-	outboxProcessor *service.OutboxProcessor
-}
-
-func initServices(
-	cfg *config.Config,
-	repos *repositories,
-	tm *transaction.Manager,
-	vClock *clock.VirtualClock,
-	producer *pkgkafka.Producer,
-	log logger.Logger,
-) (*services, error) {
-	// Event Dispatcher
-	eventDispatcher := service.NewEventDispatcher(repos.outbox, vClock, log)
-
-	// Kafka Event Sender
-	kafkaSender := kafkatransport.NewEventSenderAdapter(producer, log)
-
-	// Webhook Delivery Service
-	webhookDelivery := service.NewWebhookDeliveryService(
-		repos.webhookEndpoint,
-		repos.webhookLog,
-		repos.event,
-		&httpWebhookSender{},
-		vClock,
-		log,
-	)
-
-	// Notification Service
-	notification := service.NewNotificationService(kafkaSender, webhookDelivery, log)
-
-	// Outbox Processor
-	outboxProcessor := service.NewOutboxProcessor(
-		repos.outbox,
-		notification,
-		log,
-		service.DefaultOutboxProcessorConfig(),
-	)
-
-	rateManager := service.NewPaymentRateManager(cfg.Billing.DefaultPaymentSuccessRate)
-
-	// Billing Service
-	billing := service.NewBillingService(
-		repos.subscription,
-		repos.invoice,
-		repos.price,
-		eventDispatcher,
-		tm,
-		log,
-		vClock,
-		rateManager, // ← Передаем
-	)
-
-	// Customer Service
-	customer := service.NewCustomerService(
-		repos.customer,
-		eventDispatcher,
-		tm,
-		log,
-		vClock,
-	)
-
-	// Product Service
-	product := service.NewProductService(
-		repos.product,
-		tm,
-		log,
-		vClock,
-	)
-
-	// Price Service
-	price := service.NewPriceService(
-		repos.price,
-		tm,
-		log,
-		vClock,
-	)
-
-	// Payment Service
-	payment := service.NewPaymentService(
-		repos.paymentIntent,
-		repos.invoice,
-		eventDispatcher,
-		tm,
-		log,
-		vClock,
-		rateManager, // ← Передаем
-	)
-
-	// Time Service
-	timeSvc := service.NewTimeService(
-		vClock,
-		billing,
-		repos.subscription,
-		repos.cache,
-		log,
-	)
-
-	// Регистрируем listener для Time Jump (batch renewal)
-	vClock.OnTimeJump(func(oldTime, newTime time.Time) {
-		log.LogAttrs(context.Background(), logger.InfoLevel, "time jump detected, triggering batch renewal",
-			logger.Time("old_time", oldTime),
-			logger.Time("new_time", newTime),
-		)
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-			defer cancel()
-			if err := timeSvc.CheckAndRenewSubscriptions(ctx); err != nil {
-				log.LogAttrs(ctx, logger.ErrorLevel, "batch renewal failed", logger.Error(err))
-			}
-		}()
-	})
-
-	return &services{
-		billing:         billing,
-		customer:        customer,
-		product:         product,
-		price:           price,
-		payment:         payment,
-		time:            timeSvc,
-		notification:    notification,
-		webhookDelivery: webhookDelivery,
-		eventDispatcher: eventDispatcher,
+	return &App{
+		log:             log,
+		httpServer:      httpServer,
 		outboxProcessor: outboxProcessor,
+		invoiceDue:      invoiceDueWorker,
+		renewalWorker:   renewalWorker,
+		webhookRetry:    webhookRetryWorker,
+		cleanupWorkers:  []*worker.CleanupWorker{outboxCleanup},
+		kafkaProducer:   kafkaProducer,
+		dlq:             kafkaDLQ,
+		hub:             hub,
 	}, nil
 }
 
-func initCleanupWorkers(repos *repositories, log logger.Logger) []*worker.CleanupWorker {
-	return []*worker.CleanupWorker{
-		// Очистка webhook_logs старше 7 дней, каждые 1 час
-		worker.NewCleanupWorker(
-			"webhook_logs",
-			1*time.Hour,
-			7*24*time.Hour,
-			repos.webhookLog.DeleteOldLogs,
-			log,
-		),
-		// Очистка api_requests старше 3 дней, каждые 6 часов
-		worker.NewCleanupWorker(
-			"api_requests",
-			6*time.Hour,
-			3*24*time.Hour,
-			repos.apiRequest.DeleteOldRequests,
-			log,
-		),
+// Run — запускает всё и блокируется до отмены ctx (например, по SIGTERM в main.go).
+func (a *App) Run(ctx context.Context) error {
+	const op = "app.Run"
+
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error { return a.httpServer.Start(ctx) })
+	eg.Go(func() error { return a.outboxProcessor.Start(ctx) })
+
+	eg.Go(func() error { a.invoiceDue.Start(ctx); return nil })
+	eg.Go(func() error { a.renewalWorker.Start(ctx); return nil })
+	eg.Go(func() error { a.webhookRetry.Start(ctx); return nil })
+
+	for _, w := range a.cleanupWorkers {
+		w := w
+		eg.Go(func() error { w.Start(ctx); return nil })
 	}
+
+	if err := eg.Wait(); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
 }
 
-// httpWebhookSender - реализация WebhookSender для HTTP запросов
-type httpWebhookSender struct{}
+// Shutdown — грациозно останавливает воркеры и HTTP-сервер в правильном порядке:
+// сначала перестаём принимать новый трафик (HTTP), затем даём воркерам дообработать
+// то, что уже в полёте, и только потом закрываем Kafka/DLQ.
+func (a *App) Shutdown(ctx context.Context) error {
+	_ = a.httpServer.Stop(ctx)
 
-func (s *httpWebhookSender) Send(ctx context.Context, url string, payload []byte, signature string, timestamp int64) (int, error) {
-	// Здесь должна быть реальная реализация HTTP клиента
-	// Для простоты возвращаем успех
-	return 200, nil
-}
-
-func initInfrastructure(
-	cfg *config.Config,
-	log logger.Logger,
-) (*postgres.Postgres, *redis.Redis, *pkgkafka.Producer, error) {
-	db, err := initDatabase(cfg.Database, log)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("init database: %w", err)
+	_ = a.outboxProcessor.Stop(ctx)
+	a.invoiceDue.Stop()
+	a.renewalWorker.Stop()
+	a.webhookRetry.Stop()
+	for _, w := range a.cleanupWorkers {
+		w.Stop()
 	}
 
-	rdb, err := initCache(cfg.Cache, log)
-	if err != nil {
-		db.Close()
-		return nil, nil, nil, fmt.Errorf("init cache: %w", err)
-	}
+	_ = a.dlq.Close()
+	_ = a.kafkaProducer.Close()
 
-	producer := pkgkafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.InvoiceTopic, log)
-
-	return db, rdb, producer, nil
-}
-
-func initDatabase(cfg config.Database, log logger.Logger) (*postgres.Postgres, error) {
-	dbCfg := postgres.Config{
-		Host:           cfg.Host,
-		Port:           cfg.Port,
-		User:           cfg.User,
-		Password:       cfg.Password,
-		Name:           cfg.Name,
-		SSLMode:        cfg.SSLMode,
-		MaxPoolSize:    cfg.MaxPoolSize,
-		ConnAttempts:   cfg.ConnAttempts,
-		BaseRetryDelay: cfg.BaseRetryDelay,
-		MaxRetryDelay:  cfg.MaxRetryDelay,
-	}
-	return postgres.New(dbCfg, log)
-}
-
-func initCache(cfg config.Cache, log logger.Logger) (*redis.Redis, error) {
-	rdbCfg := redis.Config{
-		Host:         cfg.Host,
-		Port:         cfg.Port,
-		Password:     cfg.Password,
-		DB:           cfg.DB,
-		TTL:          cfg.TTL,
-		PoolSize:     cfg.PoolSize,
-		MinIdleConns: cfg.MinIdleConns,
-		PoolTimeout:  cfg.PoolTimeout,
-	}
-	return redis.New(rdbCfg, log)
-}
-
-func closeResources(
-	ctx context.Context,
-	db *postgres.Postgres,
-	rdb *redis.Redis,
-	producer *pkgkafka.Producer,
-	log logger.Logger,
-) {
-	if db != nil {
-		db.Close()
-		log.LogAttrs(ctx, logger.InfoLevel, "database connection closed")
-	}
-	if rdb != nil {
-		if err := rdb.Close(); err != nil {
-			log.LogAttrs(ctx, logger.WarnLevel, "failed to close cache", logger.Any("err", err))
-		}
-	}
-	if producer != nil {
-		if err := producer.Close(); err != nil {
-			log.LogAttrs(ctx, logger.WarnLevel, "failed to close kafka producer", logger.Any("err", err))
-		}
-	}
-	log.LogAttrs(ctx, logger.InfoLevel, "all resources cleaned up")
+	return nil
 }

@@ -38,8 +38,14 @@ type PaymentIntent struct {
 	domainEvents      DomainEvents
 }
 
-func NewPaymentIntent(customerID uuid.UUID, invoiceID *uuid.UUID, amount int64, currency string, now time.Time) *PaymentIntent {
-	pubID, _ := GeneratePublicID("pi")
+func NewPaymentIntent(customerID uuid.UUID, invoiceID *uuid.UUID, amount int64, currency string, now time.Time) (*PaymentIntent, error) {
+	pubID, err := GeneratePublicID("pi")
+	if err != nil {
+		return nil, err
+	}
+
+	utc := now.UTC()
+
 	return &PaymentIntent{
 		ID:                uuid.New(),
 		PublicID:          pubID,
@@ -49,17 +55,19 @@ func NewPaymentIntent(customerID uuid.UUID, invoiceID *uuid.UUID, amount int64, 
 		Currency:          currency,
 		Status:            PaymentIntentStatusRequiresPaymentMethod,
 		PaymentMethodType: "card",
-		Metadata:          make(map[string]string),
-		CreatedAt:         now.UTC(),
-		UpdatedAt:         now.UTC(),
+		Metadata:          NewMetadata(),
+		CreatedAt:         utc,
+		UpdatedAt:         utc,
 		domainEvents:      make(DomainEvents, 0),
-	}
+	}, nil
 }
 
 func (pi *PaymentIntent) MarkSucceeded(now time.Time) {
+	utc := now.UTC()
+
 	pi.Status = PaymentIntentStatusSucceeded
 	pi.AmountCaptured = pi.Amount
-	pi.UpdatedAt = now.UTC()
+	pi.UpdatedAt = utc
 
 	pi.domainEvents.Raise(PaymentIntentSucceededEvent{
 		PaymentIntentID:    pi.ID,
@@ -68,13 +76,15 @@ func (pi *PaymentIntent) MarkSucceeded(now time.Time) {
 		InvoiceID:          pi.InvoiceID,
 		Amount:             pi.Amount,
 		Currency:           pi.Currency,
-		SucceededAt:        now.UTC(),
+		SucceededAt:        utc,
 	})
 }
 
 func (pi *PaymentIntent) MarkFailed(now time.Time, errorCode, declineCode string) {
+	utc := now.UTC()
+
 	pi.Status = PaymentIntentStatusRequiresPaymentMethod
-	pi.UpdatedAt = now.UTC()
+	pi.UpdatedAt = utc
 
 	bytes, _ := json.Marshal(map[string]string{
 		"code":         errorCode,
@@ -91,7 +101,7 @@ func (pi *PaymentIntent) MarkFailed(now time.Time, errorCode, declineCode string
 		Currency:           pi.Currency,
 		ErrorCode:          errorCode,
 		DeclineCode:        declineCode,
-		FailedAt:           now.UTC(),
+		FailedAt:           utc,
 	})
 }
 

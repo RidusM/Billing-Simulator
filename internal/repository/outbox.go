@@ -192,7 +192,6 @@ func (r *OutboxRepository) MarkFailed(ctx context.Context, id uuid.UUID, errorMs
 		Set("error", errorMsg).
 		Set("attempt", attempt).
 		Set("next_attempt_at", nextAttemptAt).
-		Set("processed_at", squirrel.Expr("NOW()")).
 		Where(squirrel.Eq{"id": id}).
 		ToSql()
 	if err != nil {

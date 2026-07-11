@@ -31,10 +31,6 @@ type (
 		Update(ctx context.Context, i *entity.Invoice) error // ← ДОБАВИТЬ
 	}
 
-	PriceReader interface {
-		GetByID(ctx context.Context, id uuid.UUID) (*entity.Price, error)
-	}
-
 	TransactionManager interface {
 		ExecuteInTransaction(ctx context.Context, txName string, fn func(ctx context.Context) error) error
 	}
@@ -43,7 +39,7 @@ type (
 type BillingService struct {
 	subscriptions SubscriptionRepository
 	invoices      InvoiceRepository
-	price         PriceReader
+	price         PriceRepository
 	dispatcher    *EventDispatcher
 	tm            TransactionManager
 	log           logger.Logger
@@ -85,6 +81,8 @@ func (bs *BillingService) CreateSubscription(ctx context.Context, customerID uui
 		now := bs.clock.Now()
 		nextBilling := price.NextBillingDate(now)
 		sub = entity.NewSubscription(customerID, price.ID, now, nextBilling, now)
+		sub.CustomerPublicID = customerPublicID // (нужно получить customer из репозитория, если его нет в аргументах)
+		sub.PricePublicID = price.PublicID
 		if err := bs.subscriptions.Create(ctx, sub); err != nil {
 			return fmt.Errorf("create subscription: %w", err)
 		}
@@ -189,15 +187,12 @@ func (bs *BillingService) RenewSubscription(ctx context.Context, subID uuid.UUID
 			}
 			sub.MarkPaid(now)
 		} else {
-			inv.AttemptCount++
-			isFinalAttempt := inv.AttemptCount >= 3
-
+			isFinalAttempt := (inv.AttemptCount + 1) >= 3
 			if isFinalAttempt {
 				sub.MarkCanceled(now)
 			} else {
 				sub.MarkPastDue(now)
 			}
-
 			if err := inv.MarkPaymentFailed(now, "card_declined", isFinalAttempt); err != nil {
 				return fmt.Errorf("mark payment failed: %w", err)
 			}

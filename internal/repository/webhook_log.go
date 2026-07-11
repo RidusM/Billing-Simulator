@@ -78,7 +78,7 @@ func (r *WebhookLogRepository) GetPendingForRetry(ctx context.Context, currentTi
 		Select("id", "public_id", "event_id", "endpoint_id", "trace_id", "event_type", "payload", "target_url", "status", "attempt", "max_attempts", "next_attempt_at", "created_at", "updated_at").
 		From("webhook_logs").
 		Where(squirrel.And{
-			squirrel.Eq{"status": entity.WebhookStatusPending},
+			squirrel.Expr("status IN (?, ?)", entity.WebhookStatusPending, entity.WebhookStatusFailed),
 			squirrel.LtOrEq{"next_attempt_at": currentTime},
 		}).
 		OrderBy("next_attempt_at ASC").

@@ -14,7 +14,7 @@ type APIRequest struct {
 	Path           string
 	QueryParams    json.RawMessage
 	RequestBody    json.RawMessage
-	Headers        json.RawMessage
+	Headers        map[string]string
 	ResponseStatus int
 	ResponseBody   json.RawMessage
 	IPAddress      string

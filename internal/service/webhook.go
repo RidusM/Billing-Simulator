@@ -135,14 +135,6 @@ func (s *WebhookDeliveryService) deliverToEndpoint(
 			logEntry.ResponseCode = &statusCode
 			logEntry.UpdatedAt = s.clock.Now()
 			_ = s.logs.Update(ctx, logEntry)
-			return
-		}
-
-		if err == nil && statusCode >= 200 && statusCode < 300 {
-			logEntry.Status = entity.WebhookStatusDelivered
-			logEntry.ResponseCode = &statusCode
-			logEntry.UpdatedAt = s.clock.Now()
-			_ = s.logs.Update(ctx, logEntry)
 
 			event := &entity.Event{
 				ID:        uuid.New(),

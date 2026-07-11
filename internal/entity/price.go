@@ -31,11 +31,16 @@ type Price struct {
 	domainEvents  DomainEvents
 }
 
-func NewPrice(productID uuid.UUID, amount int64, currency string, interval BillingInterval, intervalCount int, now time.Time) *Price {
-	pubID, _ := GeneratePublicID("price")
+func NewPrice(productID uuid.UUID, amount int64, currency string, interval BillingInterval, intervalCount int, now time.Time) (*Price, error) {
+	pubID, err := GeneratePublicID("price")
+	if err != nil {
+		return nil, err
+	}
 	if intervalCount <= 0 {
 		intervalCount = 1
 	}
+
+	utc := now.UTC()
 
 	p := &Price{
 		ID:            uuid.New(),
@@ -46,9 +51,9 @@ func NewPrice(productID uuid.UUID, amount int64, currency string, interval Billi
 		Interval:      interval,
 		IntervalCount: intervalCount,
 		Active:        true,
-		Metadata:      make(map[string]string),
-		CreatedAt:     now.UTC(),
-		UpdatedAt:     now.UTC(),
+		Metadata:      NewMetadata(),
+		CreatedAt:     utc,
+		UpdatedAt:     utc,
 		domainEvents:  make(DomainEvents, 0),
 	}
 
@@ -60,10 +65,10 @@ func NewPrice(productID uuid.UUID, amount int64, currency string, interval Billi
 		Currency:      p.Currency,
 		Interval:      p.Interval,
 		IntervalCount: p.IntervalCount,
-		CreatedAt:     now.UTC(),
+		CreatedAt:     utc,
 	})
 
-	return p
+	return p, nil
 }
 
 func (p Price) NextBillingDate(from time.Time) time.Time {
@@ -82,10 +87,22 @@ func (p Price) NextBillingDate(from time.Time) time.Time {
 	}
 }
 
-func (p *Price) Update(amount int64, active bool, now time.Time) {
+func (p *Price) Update(
+	amount int64,
+	active bool,
+	now time.Time,
+) {
+
+	if p.Amount == amount &&
+		p.Active == active {
+		return
+	}
+
+	utc := now.UTC()
+
 	p.Amount = amount
 	p.Active = active
-	p.UpdatedAt = now.UTC()
+	p.UpdatedAt = utc
 
 	p.domainEvents.Raise(PriceUpdatedEvent{
 		PriceID:       p.ID,
@@ -96,7 +113,7 @@ func (p *Price) Update(amount int64, active bool, now time.Time) {
 		Interval:      p.Interval,
 		IntervalCount: p.IntervalCount,
 		Active:        p.Active,
-		UpdatedAt:     now.UTC(),
+		UpdatedAt:     utc,
 	})
 }
 

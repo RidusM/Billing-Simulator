@@ -291,6 +291,7 @@ func (r *InvoiceRepository) findFirst(ctx context.Context, op string, filter squ
 		).
 		From("invoices").
 		Where(squirrel.And{filter, squirrel.Expr("deleted_at IS NULL")}).
+		Limit(1).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)

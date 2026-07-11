@@ -22,23 +22,33 @@ type OutboxEvent struct {
 }
 
 func NewOutboxEvent(event DomainEvent, now time.Time, payload []byte) *OutboxEvent {
+	utc := now.UTC()
 	return &OutboxEvent{
 		ID:            uuid.New(),
-		EventType:     event.EventType(),
+		EventType:     string(event.EventType()),
 		AggregateID:   event.AggregateID(),
 		AggregateType: event.AggregateType(),
 		Payload:       payload,
 		OccurredAt:    event.OccurredOn(),
 		Processed:     false,
-		CreatedAt:     now,
+		CreatedAt:     utc,
 	}
 }
 
 func (e *OutboxEvent) MarkProcessed(now time.Time) {
+	utc := now.UTC()
 	e.Processed = true
-	e.ProcessedAt = &now
+	e.ProcessedAt = &utc
 }
 
-func (e *OutboxEvent) MarkFailed(errMsg string) {
-	e.Error = &errMsg
+func (o *OutboxEvent) MarkFailed(
+	err string,
+	nextRetry time.Time,
+) {
+
+	o.Attempt++
+
+	o.NextAttemptAt = &nextRetry
+
+	o.Error = &err
 }
